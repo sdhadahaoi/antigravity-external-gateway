@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+data/
+gateway-data/
+*.log
+
+# Local tooling
+.DS_Store
+coverage/
+.nyc_output/

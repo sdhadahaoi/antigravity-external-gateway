@@ -1,0 +1,155 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+
+import { ChannelStore, estimateTokens } from '../lib/channel-store.mjs';
+
+function makeStore(t) {
+  const directory = mkdtempSync(join(tmpdir(), 'ag-channel-store-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  return {
+    path: join(directory, 'channels.json'),
+    store: new ChannelStore(join(directory, 'channels.json')),
+  };
+}
+
+test('creates persistent credentials without persisting or exposing raw keys', (t) => {
+  const { path, store } = makeStore(t);
+  const created = store.create({
+    label: 'Friend one',
+    target_window_id: 'oauth-window-a',
+    allowed_models: ['gemini-2.5-pro'],
+    token_limit: 100,
+    starts_at: '2030-01-01T00:00:00.000Z',
+    expires_at: '2030-01-02T00:00:00.000Z',
+  });
+
+  assert.match(created.channel.id, /^agc_[A-Za-z0-9_-]+$/);
+  assert.match(created.apiKey, /^agk_[A-Za-z0-9_-]+$/);
+  assert.equal(created.channel.target_window_id, 'oauth-window-a');
+  assert.equal('apiKey' in created.channel, false);
+  assert.equal('key_hash' in created.channel, false);
+
+  const publicView = store.getPublic(created.channel.id, { now: '2030-01-01T12:00:00.000Z' });
+  assert.equal('target_window_id' in publicView, false);
+  assert.equal('usage' in publicView, false);
+  assert.equal('key_hint' in publicView, false);
+
+  const persisted = readFileSync(path, 'utf8');
+  assert.equal(persisted.includes(created.apiKey), false);
+  assert.match(persisted, /"key_hash": "[a-f0-9]{64}"/);
+
+  const reopened = new ChannelStore(path);
+  assert.equal(reopened.authorize(created.channel.id, created.apiKey, '2030-01-01T12:00:00.000Z').ok, true);
+  assert.equal(reopened.authorize(created.channel.id, 'wrong-key', '2030-01-01T12:00:00.000Z').reason, 'invalid_api_key');
+});
+
+test('reserves quota before upstream work, settles actual use, and enforces policy', (t) => {
+  const { store } = makeStore(t);
+  const created = store.create({
+    label: 'Limited',
+    allowed_models: ['gemini-*'],
+    token_limit: 80,
+    request_limit: 3,
+    concurrency_limit: 1,
+    max_output_tokens: 20,
+  });
+  const request = {
+    id: created.channel.id,
+    apiKey: created.apiKey,
+    model: 'gemini-2.5-pro',
+    inputTokens: 20,
+    maxOutputTokens: 20,
+    now: 1_000_000,
+  };
+
+  const first = store.checkAndReserve(request);
+  assert.equal(first.ok, true);
+  assert.equal(first.estimate.total, 40);
+  assert.equal(store.summary(created.channel.id, { now: 1_000_000 }).remaining.tokens, 40);
+
+  const concurrent = store.checkAndReserve({ ...request, now: 1_000_001 });
+  assert.deepEqual(concurrent, { ok: false, reason: 'concurrency_limit_exceeded', estimatedTokens: 40 });
+  assert.equal(store.settleReservation(first.reservationId, { inputTokens: 18, outputTokens: 12, now: 1_000_002 }).ok, true);
+
+  const maxOutput = store.checkAndReserve({ ...request, maxOutputTokens: 21, now: 1_000_003 });
+  assert.equal(maxOutput.reason, 'max_output_tokens_exceeded');
+  const model = store.checkAndReserve({ ...request, model: 'claude-opus', now: 1_000_004 });
+  assert.equal(model.reason, 'model_not_allowed');
+
+  const second = store.checkAndReserve({ ...request, inputTokens: 30, maxOutputTokens: 20, now: 1_000_005 });
+  assert.equal(second.ok, true);
+  const tokenLimit = store.checkAndReserve({ ...request, inputTokens: 30, maxOutputTokens: 20, now: 1_000_006 });
+  assert.equal(tokenLimit.reason, 'token_limit_exceeded');
+
+  const summary = store.summary(created.channel.id, { now: 1_000_006 });
+  assert.equal(summary.usage.total_tokens, 30);
+  assert.equal(summary.usage.reserved_tokens, 50);
+  assert.equal(summary.usage.total_requests, 2);
+  assert.equal(summary.usage.rejected_requests, 4);
+
+  assert.equal(store.settleReservation(second.reservationId, { totalTokens: 50, outputTokens: 20 }).actual.input, 30);
+});
+
+test('enforces request rate and lifespan and releases expired reservations', (t) => {
+  const { store } = makeStore(t);
+  const created = store.create({
+    rate_limit_per_minute: 1,
+    request_limit: 2,
+    starts_at: 10_000,
+    expires_at: 70_000,
+  });
+  const input = {
+    id: created.channel.id,
+    apiKey: created.apiKey,
+    model: 'any',
+    estimatedTokens: 10,
+    reservationTtlMs: 1_000,
+  };
+
+  assert.equal(store.checkAndReserve({ ...input, now: 9_999 }).reason, 'not_started');
+  const accepted = store.checkAndReserve({ ...input, now: 10_000 });
+  assert.equal(accepted.ok, true);
+  assert.equal(store.checkAndReserve({ ...input, now: 10_001 }).reason, 'rate_limit_exceeded');
+
+  const afterExpiry = store.summary(created.channel.id, { now: 11_001 });
+  assert.equal(afterExpiry.usage.active_requests, 0);
+  assert.equal(afterExpiry.usage.reserved_tokens, 0);
+  assert.equal(store.checkAndReserve({ ...input, now: 70_000 }).reason, 'expired');
+});
+
+test('rotates keys and sanitizes stored logs', (t) => {
+  const { path, store } = makeStore(t);
+  const created = store.create({ label: 'Rotating' });
+  const rotated = store.rotate(created.channel.id);
+
+  assert.equal(store.authorize(created.channel.id, created.apiKey).reason, 'invalid_api_key');
+  assert.equal(store.authorize(created.channel.id, rotated.apiKey).ok, true);
+  store.recordRejected({
+    id: created.channel.id,
+    reason: 'blocked',
+    model: 'gemini-2.5-pro',
+    inputTokens: 12,
+    prompt: 'do not store this prompt',
+    apiKey: rotated.apiKey,
+    arbitrary: 'do not store this either',
+  });
+
+  const logs = store.getLogs(created.channel.id);
+  const rejection = logs.find((entry) => entry.event === 'rejected');
+  assert.deepEqual(Object.keys(rejection).sort(), ['at', 'channel_id', 'estimated_tokens', 'event', 'model', 'reason']);
+  const persisted = readFileSync(path, 'utf8');
+  assert.equal(persisted.includes(rotated.apiKey), false);
+  assert.equal(persisted.includes('do not store this prompt'), false);
+  assert.equal(persisted.includes('do not store this either'), false);
+  assert.equal(store.getLogs({ channelId: '', limit: 10 }).length, logs.length);
+});
+
+test('estimates Chinese, mixed-language, and structured prompts', () => {
+  assert.equal(estimateTokens(''), 0);
+  assert.equal(estimateTokens('你好世界'), 4);
+  assert.ok(estimateTokens('hello world') >= 3);
+  assert.ok(estimateTokens([{ role: 'user', content: '你好, please summarize this.' }]) >= 8);
+});

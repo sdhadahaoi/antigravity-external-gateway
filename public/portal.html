@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Antigravity API</title>
+  <link rel="stylesheet" href="/assets/portal.css">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="mark">AG</div>
+      <div><h1>Antigravity API</h1><p id="endpoint">正在加载外接通道</p></div>
+    </header>
+    <section class="panel auth">
+      <label>API Key<input id="apiKey" type="password" autocomplete="off" placeholder="agx_..."></label>
+      <button id="loadModels" class="secondary">加载模型</button>
+    </section>
+    <section class="panel">
+      <div class="row"><label>模型<select id="model"><option value="">先加载模型</option></select></label><span id="status" class="status">待命</span></div>
+      <label>消息<textarea id="prompt" rows="8" placeholder="输入消息"></textarea></label>
+      <div class="actions"><button id="send" class="primary">发送</button><button id="retry" class="secondary" disabled>失败后重试 3 次</button></div>
+    </section>
+    <section class="panel"><label>响应<textarea id="response" rows="14" readonly></textarea></label></section>
+  </main>
+  <script src="/assets/portal.js"></script>
+</body>
+</html>

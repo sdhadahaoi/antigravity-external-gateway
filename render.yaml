@@ -1,0 +1,31 @@
+services:
+  - type: web
+    runtime: node
+    name: antigravity-external-gateway
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    disk:
+      name: gateway-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # Render injects PORT for web services. Keep this unsynced when using a Blueprint.
+      - key: PORT
+        sync: false
+      # This unlocks only the gateway administration UI/API, never the upstream bridge.
+      - key: GATEWAY_ADMIN_KEY
+        generateValue: true
+      # These are the original bridge deployment details. Set them in Render; never commit them.
+      - key: UPSTREAM_BRIDGE_URL
+        sync: false
+      - key: UPSTREAM_BRIDGE_API_KEY
+        sync: false
+      # Gateway state must live on the persistent disk, not the ephemeral service filesystem.
+      - key: GATEWAY_DATA_DIR
+        value: /var/data
+      # Optional public base URL, useful after binding a custom domain.
+      - key: GATEWAY_PUBLIC_BASE_URL
+        sync: false
+      - key: GATEWAY_MAX_BODY_BYTES
+        value: "10485760"

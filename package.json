@@ -1,0 +1,14 @@
+{
+  "name": "antigravity-external-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A standalone access gateway for an Antigravity bridge deployment.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}

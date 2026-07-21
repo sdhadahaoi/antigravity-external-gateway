@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>Antigravity 外接网关</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">AG</span>
+          <div>
+            <p class="eyebrow">PRIVATE GATEWAY</p>
+            <h1>Antigravity 外接网关</h1>
+          </div>
+        </div>
+        <div class="upstream-state" id="upstreamState" title="仅显示上游连接状态，不显示上游地址或凭证">
+          <span class="state-dot" aria-hidden="true"></span>
+          <span>等待读取状态</span>
+        </div>
+      </header>
+
+      <section class="admin-access" aria-labelledby="adminKeyTitle">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">LOCAL CONTROL</p>
+            <h2 id="adminKeyTitle">管理访问</h2>
+          </div>
+          <p class="muted">管理密钥仅保存于当前浏览器会话，不会展示上游 OAuth 或服务地址。</p>
+        </div>
+        <div class="admin-key-row">
+          <label class="sr-only" for="adminKey">管理密钥</label>
+          <input id="adminKey" type="password" autocomplete="current-password" placeholder="输入管理密钥后加载控制台">
+          <button class="button button-primary" id="saveAdminKey" type="button">保存并连接</button>
+          <button class="button button-quiet" id="clearAdminKey" type="button">清除</button>
+        </div>
+        <p id="adminMessage" class="form-message" role="status"></p>
+      </section>
+
+      <section class="summary-section" aria-label="网关概览">
+        <div class="summary-card">
+          <span>外接通道</span>
+          <strong id="channelCount">-</strong>
+          <small id="activeChannelCount">等待连接</small>
+        </div>
+        <div class="summary-card">
+          <span>累计令牌</span>
+          <strong id="totalTokenUsage">-</strong>
+          <small>所有外接通道</small>
+        </div>
+        <div class="summary-card">
+          <span>累计请求</span>
+          <strong id="totalRequestUsage">-</strong>
+          <small>所有外接通道</small>
+        </div>
+        <div class="summary-card endpoint-card">
+          <span>外接 API 地址</span>
+          <div class="endpoint-copy">
+            <code id="publicEndpoint">等待连接</code>
+            <button class="icon-button" id="copyPublicEndpoint" type="button" aria-label="复制外接 API 地址" title="复制外接 API 地址">复制</button>
+          </div>
+          <small>仅显示网关地址</small>
+        </div>
+      </section>
+
+      <div class="workspace-grid">
+        <section class="panel create-panel" aria-labelledby="createTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">NEW ACCESS</p>
+              <h2 id="createTitle">新建外接通道</h2>
+            </div>
+            <span class="panel-note">创建后仅展示一次密钥</span>
+          </div>
+          <form id="createChannelForm" class="channel-form">
+            <label>
+              通道名称
+              <input name="label" maxlength="80" required placeholder="例如：朋友 - 开发测试">
+            </label>
+            <label>
+              指定凭证窗口
+              <select name="target_window_id" id="createAccount" required disabled>
+                <option value="">先连接管理端</option>
+              </select>
+            </label>
+            <fieldset class="model-fieldset">
+              <legend>允许模型</legend>
+              <div class="model-picker" id="createModels">
+                <span class="placeholder">先连接管理端以读取模型</span>
+              </div>
+            </fieldset>
+            <div class="form-grid two-columns">
+              <label>
+                总 Token 上限
+                <input name="token_limit" type="number" min="0" step="1000" placeholder="留空 = 不限制">
+              </label>
+              <label>
+                请求总数上限
+                <input name="request_limit" type="number" min="0" step="1" placeholder="留空 = 不限制">
+              </label>
+              <label>
+                每分钟请求数
+                <input name="rate_limit_per_minute" type="number" min="0" step="1" placeholder="留空 = 不限制">
+              </label>
+              <label>
+                并发请求数
+                <input name="concurrency_limit" type="number" min="0" step="1" placeholder="留空 = 不限制">
+              </label>
+              <label>
+                单次最大输出 Token
+                <input name="max_output_tokens" type="number" min="0" step="1" placeholder="留空 = 使用网关默认">
+              </label>
+              <label>
+                生效时间
+                <input name="starts_at" type="datetime-local">
+              </label>
+              <label class="full-width">
+                失效时间
+                <input name="expires_at" type="datetime-local">
+              </label>
+            </div>
+            <label class="switch-row">
+              <input name="enabled" type="checkbox" checked>
+              <span class="switch" aria-hidden="true"></span>
+              创建后立即启用
+            </label>
+            <div class="form-actions">
+              <button class="button button-primary" type="submit">创建并生成密钥</button>
+              <button class="button button-quiet" type="reset">重置</button>
+            </div>
+            <p id="createMessage" class="form-message" role="status"></p>
+          </form>
+        </section>
+
+        <section class="panel channels-panel" aria-labelledby="channelsTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">ACCESS CHANNELS</p>
+              <h2 id="channelsTitle">外接通道</h2>
+            </div>
+            <button class="button button-quiet" id="refreshOverview" type="button">刷新</button>
+          </div>
+          <div id="channelsList" class="channel-list" aria-live="polite">
+            <div class="empty-state">输入管理密钥后可查看并管理外接通道。</div>
+          </div>
+        </section>
+      </div>
+
+      <div class="lower-grid">
+        <section class="panel logs-panel" aria-labelledby="logsTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">AUDIT TRAIL</p>
+              <h2 id="logsTitle">使用日志</h2>
+            </div>
+            <div class="log-controls">
+              <label class="sr-only" for="logChannel">筛选通道</label>
+              <select id="logChannel" disabled>
+                <option value="">全部通道</option>
+              </select>
+              <label class="sr-only" for="logLimit">日志数量</label>
+              <select id="logLimit">
+                <option value="25">最近 25 条</option>
+                <option value="50" selected>最近 50 条</option>
+                <option value="100">最近 100 条</option>
+              </select>
+              <button class="button button-quiet" id="refreshLogs" type="button">刷新日志</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>通道</th>
+                  <th>模型</th>
+                  <th>请求</th>
+                  <th>Token</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody id="logsBody">
+                <tr><td colspan="6" class="table-empty">连接管理端后加载日志。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel estimator-panel" aria-labelledby="estimateTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">PRE-FLIGHT</p>
+              <h2 id="estimateTitle">Token 预估</h2>
+            </div>
+          </div>
+          <label for="estimateText" class="sr-only">待估算文本</label>
+          <textarea id="estimateText" rows="7" maxlength="50000" placeholder="粘贴提示词或待发送文本，估算其 Token 数量"></textarea>
+          <div class="estimate-actions">
+            <span id="estimateCharacters" class="muted">0 个字符</span>
+            <button class="button button-primary" id="estimateButton" type="button">计算</button>
+          </div>
+          <div id="estimateResult" class="estimate-result" aria-live="polite">尚未计算</div>
+        </section>
+      </div>
+    </main>
+
+    <div class="modal-backdrop hidden" id="keyModal" role="presentation">
+      <section class="modal key-modal" role="dialog" aria-modal="true" aria-labelledby="keyModalTitle">
+        <button class="modal-close" type="button" data-close-modal="keyModal" aria-label="关闭">关闭</button>
+        <p class="eyebrow">ONE-TIME SECRET</p>
+        <h2 id="keyModalTitle">请立即保存外接 API Key</h2>
+        <p class="modal-copy">该密钥不会再次完整显示。列表中只保留遮罩后的识别信息。</p>
+        <div class="secret-value"><code id="rawApiKey"></code></div>
+        <div class="modal-actions">
+          <button class="button button-primary" id="copyRawApiKey" type="button">复制 API Key</button>
+          <button class="button button-quiet" id="closeKeyModal" type="button">我已保存</button>
+        </div>
+        <div class="modal-endpoint">
+          <span>外接 API 地址</span>
+          <code id="modalEndpoint"></code>
+          <button class="button button-quiet" id="copyModalEndpoint" type="button">复制地址</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop hidden" id="editModal" role="presentation">
+      <section class="modal edit-modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <button class="modal-close" type="button" data-close-modal="editModal" aria-label="关闭">关闭</button>
+        <p class="eyebrow">CHANNEL POLICY</p>
+        <h2 id="editModalTitle">编辑外接通道</h2>
+        <form id="editChannelForm" class="channel-form modal-form">
+          <input name="id" type="hidden">
+          <label>
+            通道名称
+            <input name="label" maxlength="80" required>
+          </label>
+          <label>
+            指定凭证窗口
+            <select name="target_window_id" id="editAccount" required></select>
+          </label>
+          <fieldset class="model-fieldset">
+            <legend>允许模型</legend>
+            <div class="model-picker" id="editModels"></div>
+          </fieldset>
+          <div class="form-grid two-columns">
+            <label>总 Token 上限<input name="token_limit" type="number" min="0" step="1000"></label>
+            <label>请求总数上限<input name="request_limit" type="number" min="0" step="1"></label>
+            <label>每分钟请求数<input name="rate_limit_per_minute" type="number" min="0" step="1"></label>
+            <label>并发请求数<input name="concurrency_limit" type="number" min="0" step="1"></label>
+            <label>单次最大输出 Token<input name="max_output_tokens" type="number" min="0" step="1"></label>
+            <label>生效时间<input name="starts_at" type="datetime-local"></label>
+            <label class="full-width">失效时间<input name="expires_at" type="datetime-local"></label>
+          </div>
+          <label class="switch-row">
+            <input name="enabled" type="checkbox">
+            <span class="switch" aria-hidden="true"></span>
+            通道启用
+          </label>
+          <div class="modal-actions">
+            <button class="button button-primary" type="submit">保存设置</button>
+            <button class="button button-quiet" type="button" data-close-modal="editModal">取消</button>
+          </div>
+          <p id="editMessage" class="form-message" role="status"></p>
+        </form>
+      </section>
+    </div>
+
+    <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
