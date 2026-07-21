@@ -296,7 +296,7 @@
       "</div>" +
       "<div class=\"key-block\"><span>API Key（已遮罩）</span><div class=\"key-line\"><code>" + html(maskedKey(channel)) + "</code></div>" +
         "<div class=\"channel-endpoint\"><span>API</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
-        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>测试页</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>用户控制台</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
       "</div>" +
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
@@ -681,7 +681,7 @@
       const channel = card && findChannel(card.dataset.channelId);
       if (!channel) return;
       if (action.dataset.action === "copy-endpoint") copyText(action.dataset.endpoint, "已复制外接 API 地址。");
-      if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制朋友测试页地址。");
+      if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制用户控制台地址。");
       if (action.dataset.action === "edit") {
         populateEditForm(channel);
         openModal(elements.editModal);

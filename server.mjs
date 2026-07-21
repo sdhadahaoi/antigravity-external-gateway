@@ -309,6 +309,53 @@ function policyMessage(reason = "") {
   return "Unauthorized.";
 }
 
+function userChannelView(channel = {}) {
+  return {
+    label: String(channel.label || ""),
+    status: String(channel.status || "unknown"),
+    allowed_models: Array.isArray(channel.allowed_models) ? channel.allowed_models : [],
+    token_limit: channel.token_limit ?? null,
+    request_limit: channel.request_limit ?? null,
+    rate_limit_per_minute: channel.rate_limit_per_minute ?? null,
+    concurrency_limit: channel.concurrency_limit ?? null,
+    max_output_tokens: channel.max_output_tokens ?? null,
+    starts_at: channel.starts_at || null,
+    expires_at: channel.expires_at || null,
+    enabled: Boolean(channel.enabled)
+  };
+}
+
+function userLogView(entry = {}) {
+  const view = {
+    event: String(entry.event || ""),
+    at: String(entry.at || "")
+  };
+  for (const field of ["reason", "model", "status", "estimated_tokens", "input_tokens", "output_tokens", "total_tokens"]) {
+    if (entry[field] !== undefined) view[field] = entry[field];
+  }
+  return view;
+}
+
+function inspectUserChannel(req, accessId, res) {
+  const inspection = store.inspect(accessId, bearerToken(req));
+  if (!inspection?.ok) {
+    apiError(res, 401, "Unauthorized.", "unauthorized");
+    return null;
+  }
+  return inspection;
+}
+
+function userOverviewPayload(accessId, inspection) {
+  const summary = store.summary(accessId);
+  if (!summary) return null;
+  return {
+    ok: true,
+    channel: userChannelView({ ...summary.channel, status: inspection.status }),
+    usage: summary.usage,
+    remaining: summary.remaining
+  };
+}
+
 async function validateChannelTarget(payload = {}) {
   const target = String(payload.target_window_id || "").trim();
   if (!target) throw Object.assign(new Error("Select an upstream account window."), { statusCode: 400 });
@@ -373,6 +420,29 @@ async function handleAdmin(req, res, url) {
     return sendJson(res, 200, { ok: true });
   }
   return adminError(res, 405, "Method not allowed.");
+}
+
+async function handleUserPortalApi(req, res, url, accessId, resource) {
+  const inspection = inspectUserChannel(req, accessId, res);
+  if (!inspection) return;
+  if (resource === "overview" && req.method === "GET") {
+    const payload = userOverviewPayload(accessId, inspection);
+    if (!payload) return apiError(res, 404, "Not found.", "not_found");
+    return sendJson(res, 200, payload);
+  }
+  if (resource === "logs" && req.method === "GET") {
+    const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
+    return sendJson(res, 200, {
+      ok: true,
+      logs: store.getLogs(accessId, { limit }).map(userLogView)
+    });
+  }
+  if (resource === "token-estimate" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const text = String(body.text || "");
+    return sendJson(res, 200, { ok: true, estimate_tokens: estimateTokens(text), characters: text.length });
+  }
+  return apiError(res, 405, "Method not allowed.", "method_not_allowed");
 }
 
 async function handleExternalModels(req, res, accessId) {
@@ -496,18 +566,20 @@ async function route(req, res) {
   }
   if (url.pathname === "/health") return sendJson(res, 200, { ok: true, service: "antigravity-external-gateway" });
   if (url.pathname.startsWith("/api/admin/")) return handleAdmin(req, res, url);
+  const userPortal = url.pathname.match(/^\/access\/([A-Za-z0-9_-]+)\/user\/(overview|logs|token-estimate)$/);
+  if (userPortal) return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
   const access = url.pathname.match(/^\/access\/([A-Za-z0-9_-]+)\/v1\/(models|chat\/completions)$/);
   if (access) {
     if (access[2] === "models" && req.method === "GET") return handleExternalModels(req, res, access[1]);
     if (access[2] === "chat/completions" && req.method === "POST") return handleExternalChat(req, res, access[1]);
     return apiError(res, 405, "Method not allowed.", "method_not_allowed");
   }
-  if (/^\/access\/[A-Za-z0-9_-]+\/$/.test(url.pathname) && req.method === "GET" && staticFile(res, "portal.html", "text/html; charset=utf-8")) return;
+  if (/^\/access\/[A-Za-z0-9_-]+\/$/.test(url.pathname) && req.method === "GET" && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
   if (url.pathname === "/" && req.method === "GET" && staticFile(res, "index.html", "text/html; charset=utf-8")) return;
   if ((url.pathname === "/assets/app.js" || url.pathname === "/app.js") && req.method === "GET" && staticFile(res, "app.js", "application/javascript; charset=utf-8")) return;
   if ((url.pathname === "/assets/styles.css" || url.pathname === "/styles.css") && req.method === "GET" && staticFile(res, "styles.css", "text/css; charset=utf-8")) return;
-  if (url.pathname === "/assets/portal.js" && req.method === "GET" && staticFile(res, "portal.js", "application/javascript; charset=utf-8")) return;
-  if (url.pathname === "/assets/portal.css" && req.method === "GET" && staticFile(res, "portal.css", "text/css; charset=utf-8")) return;
+  if (url.pathname === "/assets/user.js" && req.method === "GET" && staticFile(res, "user.js", "application/javascript; charset=utf-8")) return;
+  if (url.pathname === "/assets/user.css" && req.method === "GET" && staticFile(res, "user.css", "text/css; charset=utf-8")) return;
   return sendJson(res, 404, { ok: false, message: "Not found." });
 }
 

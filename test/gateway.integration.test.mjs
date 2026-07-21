@@ -120,6 +120,14 @@ test("gateway isolates upstream credentials and routes a channel to its selected
   assert.match(created.channel.endpoint, /\/access\/agc_/);
   assert.equal(JSON.stringify(created.channel).includes(created.api_key), false);
 
+  const userPageResponse = await fetch(created.channel.friend_portal_url);
+  assert.equal(userPageResponse.status, 200);
+  const userPage = await userPageResponse.text();
+  assert.equal(userPage.includes("ACCESS CONSOLE"), true);
+  assert.equal(userPage.includes("GATEWAY_ADMIN_KEY"), false);
+  assert.equal((await fetch(`${origin}/assets/user.js`)).status, 200);
+  assert.equal((await fetch(`${origin}/assets/user.css`)).status, 200);
+
   const externalHeaders = { authorization: `Bearer ${created.api_key}`, "content-type": "application/json" };
   const externalModels = await fetch(created.channel.models_endpoint, { headers: externalHeaders });
   assert.equal(externalModels.status, 200);
@@ -136,6 +144,24 @@ test("gateway isolates upstream credentials and routes a channel to its selected
   assert.equal(completionPayload.usage.estimated, true);
   assert.ok(completionPayload.usage.total_tokens > 0);
 
+  const userOverviewResponse = await fetch(`${origin}/access/${encodeURIComponent(created.channel.id)}/user/overview`, { headers: externalHeaders });
+  assert.equal(userOverviewResponse.status, 200);
+  const userOverview = await userOverviewResponse.json();
+  assert.equal(userOverview.channel.label, "friend");
+  assert.equal(userOverview.channel.status, "active");
+  assert.ok(userOverview.usage.total_tokens > 0);
+  assert.equal(JSON.stringify(userOverview).includes("target_window_id"), false);
+  assert.equal(JSON.stringify(userOverview).includes("private-account"), false);
+  assert.equal(JSON.stringify(userOverview).includes(expectedUpstreamKey), false);
+
+  const userEstimate = await fetch(`${origin}/access/${encodeURIComponent(created.channel.id)}/user/token-estimate`, {
+    method: "POST",
+    headers: externalHeaders,
+    body: JSON.stringify({ text: "你好 user portal" })
+  });
+  assert.equal(userEstimate.status, 200);
+  assert.ok((await userEstimate.json()).estimate_tokens > 0);
+
   const forbidden = await fetch(created.channel.chat_endpoint, {
     method: "POST",
     headers: externalHeaders,
@@ -145,6 +171,25 @@ test("gateway isolates upstream credentials and routes a channel to its selected
   const logs = await (await fetch(`${origin}/api/admin/logs?channel_id=${encodeURIComponent(created.channel.id)}`, { headers: adminHeaders })).json();
   assert.ok(logs.logs.some(entry => entry.event === "settled" && entry.status === "ok"));
   assert.ok(logs.logs.some(entry => entry.event === "rejected" && entry.reason === "model_forbidden"));
+  const userLogs = await (await fetch(`${origin}/access/${encodeURIComponent(created.channel.id)}/user/logs?limit=20`, { headers: externalHeaders })).json();
+  assert.ok(userLogs.logs.length > 0);
+  assert.equal(JSON.stringify(userLogs).includes("channel_id"), false);
+  assert.equal((await fetch(`${origin}/access/${encodeURIComponent(created.channel.id)}/user/overview`, { headers: { authorization: "Bearer invalid" } })).status, 401);
+
+  const disabled = await fetch(`${origin}/api/admin/channels/${encodeURIComponent(created.channel.id)}`, {
+    method: "PATCH",
+    headers: adminHeaders,
+    body: JSON.stringify({ enabled: false })
+  });
+  assert.equal(disabled.status, 200);
+  const inactiveOverview = await (await fetch(`${origin}/access/${encodeURIComponent(created.channel.id)}/user/overview`, { headers: externalHeaders })).json();
+  assert.equal(inactiveOverview.channel.status, "disabled");
+  const disabledChat = await fetch(created.channel.chat_endpoint, {
+    method: "POST",
+    headers: externalHeaders,
+    body: JSON.stringify({ model: "claude-sonnet-4-6-thinking-ag", messages: [{ role: "user", content: "hello again" }] })
+  });
+  assert.equal(disabledChat.status, 403);
   assert.ok(seen.some(entry => entry.path === "/windows/w1/v1/chat/completions"));
   assert.ok(seen.every(entry => entry.auth === `Bearer ${expectedUpstreamKey}`));
   assert.equal((await fetch(`${origin}/v1/models`, { headers: externalHeaders })).status, 404);

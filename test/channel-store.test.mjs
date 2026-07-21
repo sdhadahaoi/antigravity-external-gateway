@@ -120,6 +120,28 @@ test('enforces request rate and lifespan and releases expired reservations', (t)
   assert.equal(store.checkAndReserve({ ...input, now: 70_000 }).reason, 'expired');
 });
 
+test('inspect returns valid inactive channels while authorize remains an active-only gate', (t) => {
+  const { store } = makeStore(t);
+  const expired = store.create({
+    label: 'Expired channel',
+    target_window_id: 'window-expired',
+    expires_at: 10_000,
+  });
+  const expiredInspection = store.inspect(expired.channel.id, expired.apiKey, 10_000);
+  assert.equal(expiredInspection.ok, true);
+  assert.equal(expiredInspection.status, 'expired');
+  assert.equal(expiredInspection.channel.target_window_id, 'window-expired');
+  assert.equal('key_hash' in expiredInspection.channel, false);
+  assert.deepEqual(store.authorize(expired.channel.id, expired.apiKey, 10_000), { ok: false, reason: 'expired' });
+
+  const disabled = store.create({ label: 'Disabled channel' });
+  store.update(disabled.channel.id, { enabled: false });
+  const disabledInspection = store.inspect(disabled.channel.id, disabled.apiKey);
+  assert.equal(disabledInspection.ok, true);
+  assert.equal(disabledInspection.status, 'disabled');
+  assert.deepEqual(store.authorize(disabled.channel.id, disabled.apiKey), { ok: false, reason: 'disabled' });
+});
+
 test('rotates keys and sanitizes stored logs', (t) => {
   const { path, store } = makeStore(t);
   const created = store.create({ label: 'Rotating' });

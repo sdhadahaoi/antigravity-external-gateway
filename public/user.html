@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>API 使用台</title>
+  <link rel="stylesheet" href="/assets/user.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">AG</div>
+        <div>
+          <p class="eyebrow">ACCESS CONSOLE</p>
+          <h1 id="portalTitle">API 使用台</h1>
+        </div>
+      </div>
+      <div class="connection-state" id="connectionState" aria-live="polite">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span id="connectionStateText">等待连接</span>
+      </div>
+    </header>
+
+    <section class="connect-panel" aria-labelledby="connectTitle">
+      <div class="section-heading compact-heading">
+        <div>
+          <p class="eyebrow">YOUR ACCESS</p>
+          <h2 id="connectTitle">连接访问密钥</h2>
+        </div>
+        <button class="button button-quiet" id="disconnectButton" type="button" hidden>退出会话</button>
+      </div>
+      <form class="connect-form" id="connectForm">
+        <label class="sr-only" for="apiKey">访问密钥</label>
+        <input id="apiKey" name="apiKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="输入朋友分享给你的访问密钥" required>
+        <button class="button button-primary" id="connectButton" type="submit">连接</button>
+      </form>
+      <p class="form-message" id="connectMessage" role="status">访问密钥仅保存在当前浏览器会话中。</p>
+    </section>
+
+    <main class="dashboard" id="dashboard" hidden>
+      <section class="access-notice" id="accessNotice" hidden role="status">
+        <strong id="accessNoticeTitle">当前访问不可用</strong>
+        <span id="accessNoticeText"></span>
+      </section>
+
+      <section class="overview-row" aria-label="访问概览">
+        <div class="overview-copy">
+          <p class="eyebrow">CURRENT ACCESS</p>
+          <h2 id="channelLabel">加载中</h2>
+          <div class="status-line">
+            <span class="status-pill" id="channelStatus">--</span>
+            <span class="expiry" id="expiryText">有效期加载中</span>
+          </div>
+        </div>
+        <div class="overview-actions">
+          <button class="button button-quiet" id="refreshOverview" type="button">刷新用量</button>
+        </div>
+      </section>
+
+      <section class="quota-grid" aria-label="额度与限制">
+        <article class="quota-card">
+          <span class="quota-label">Token 用量</span>
+          <strong id="tokenQuotaValue">--</strong>
+          <span class="quota-note" id="tokenQuotaNote">--</span>
+          <progress id="tokenQuotaMeter" max="1" value="0" aria-label="Token 用量"></progress>
+        </article>
+        <article class="quota-card">
+          <span class="quota-label">请求次数</span>
+          <strong id="requestQuotaValue">--</strong>
+          <span class="quota-note" id="requestQuotaNote">--</span>
+          <progress id="requestQuotaMeter" max="1" value="0" aria-label="请求次数"></progress>
+        </article>
+        <article class="quota-card">
+          <span class="quota-label">当前分钟频率</span>
+          <strong id="rateQuotaValue">--</strong>
+          <span class="quota-note" id="rateQuotaNote">--</span>
+          <progress id="rateQuotaMeter" max="1" value="0" aria-label="当前分钟频率"></progress>
+        </article>
+        <article class="quota-card">
+          <span class="quota-label">进行中的请求</span>
+          <strong id="concurrencyQuotaValue">--</strong>
+          <span class="quota-note" id="concurrencyQuotaNote">--</span>
+          <progress id="concurrencyQuotaMeter" max="1" value="0" aria-label="进行中的请求"></progress>
+        </article>
+      </section>
+
+      <section class="limits-row" aria-label="访问规则">
+        <div>
+          <span>单次最大输出</span>
+          <strong id="maxOutputTokens">--</strong>
+        </div>
+        <div>
+          <span>可用模型</span>
+          <strong id="allowedModelSummary">--</strong>
+        </div>
+        <div class="model-chip-list" id="allowedModels" aria-label="允许的模型"></div>
+      </section>
+
+      <div class="tool-grid">
+        <section class="panel test-panel" aria-labelledby="testTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">API TEST</p>
+              <h2 id="testTitle">模型测试</h2>
+            </div>
+            <span class="attempt-status" id="attemptStatus">尚未发送</span>
+          </div>
+          <div class="form-stack">
+            <label for="modelSelect">模型</label>
+            <select id="modelSelect" disabled>
+              <option value="">连接后加载模型</option>
+            </select>
+            <label for="testPrompt">消息</label>
+            <textarea id="testPrompt" rows="7" maxlength="30000" placeholder="输入一条测试消息" disabled></textarea>
+          </div>
+          <div class="test-actions">
+            <button class="button button-primary" id="sendTest" type="button" disabled>发送测试</button>
+            <button class="button button-quiet" id="retryTest" type="button" disabled>重试</button>
+          </div>
+          <p class="form-message" id="testMessage" role="status"></p>
+          <label class="response-label" for="testResponse">响应</label>
+          <pre class="response-box" id="testResponse" tabindex="0">等待测试请求</pre>
+        </section>
+
+        <div class="side-tools">
+          <section class="panel estimator-panel" aria-labelledby="estimateTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">PRE-FLIGHT</p>
+                <h2 id="estimateTitle">Token 预估</h2>
+              </div>
+              <span class="character-count" id="estimateCharacters">0 字符</span>
+            </div>
+            <label class="sr-only" for="estimateText">待估算文本</label>
+            <textarea id="estimateText" rows="6" maxlength="50000" placeholder="粘贴待发送的文本" disabled></textarea>
+            <div class="estimate-footer">
+              <span class="estimate-result" id="estimateResult">等待输入</span>
+              <button class="button button-primary" id="estimateButton" type="button" disabled>计算</button>
+            </div>
+          </section>
+
+          <section class="panel logs-panel" aria-labelledby="logsTitle">
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="eyebrow">ACTIVITY</p>
+                <h2 id="logsTitle">我的使用记录</h2>
+              </div>
+              <div class="log-controls">
+                <label class="sr-only" for="logLimit">记录数量</label>
+                <select id="logLimit" disabled>
+                  <option value="20">20 条</option>
+                  <option value="50" selected>50 条</option>
+                  <option value="100">100 条</option>
+                </select>
+                <button class="button button-quiet" id="refreshLogs" type="button" disabled>刷新</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>模型</th>
+                    <th>Token</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody id="logsBody">
+                  <tr><td class="table-empty" colspan="4">连接后查看使用记录</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/assets/user.js"></script>
+</body>
+</html>
