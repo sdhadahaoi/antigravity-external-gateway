@@ -216,6 +216,14 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(userPage.includes("ACCESS CONSOLE"), true);
   assert.equal(userPage.includes("GATEWAY_ADMIN_KEY"), false);
   assert.equal((await adminRequest(userPortalPath)).status, 404);
+  const adminScript = await (await adminRequest("/assets/app.js")).text();
+  const userScript = await (await userRequest("/assets/user.js")).text();
+  const userCss = await (await userRequest("/assets/user.css")).text();
+  assert.equal(adminScript.includes("admin_key"), true);
+  assert.equal(adminScript.includes("modalLoginEndpoint"), true);
+  assert.equal(userScript.includes("api_key"), true);
+  assert.equal(userScript.includes("clearSensitiveQuery"), true);
+  assert.equal(userCss.includes("[hidden]"), true);
   assert.equal((await userRequest("/assets/user.js")).status, 200);
   assert.equal((await userRequest("/assets/user.css")).status, 200);
 

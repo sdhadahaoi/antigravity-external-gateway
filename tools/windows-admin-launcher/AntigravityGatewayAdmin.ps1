@@ -116,6 +116,17 @@ function Get-ApiBaseUrl {
   return "${portal}v1"
 }
 
+function Get-FriendLoginUrl {
+  $portal = Get-FriendPortalUrl
+  if (-not $portal) { return "" }
+  $key = ($friendApiKeyBox.Text + "").Trim()
+  if (-not $key) {
+    Set-Status "请先填写朋友 API Key。这个 Key 要在网页管理台创建通道后生成。"
+    return ""
+  }
+  return "${portal}?key=$([Uri]::EscapeDataString($key))"
+}
+
 function Copy-Text {
   param([string]$Text)
   if (-not $Text) { return }
@@ -200,8 +211,9 @@ function Open-AdminPortal {
   }
   $adminKey = ($adminKeyBox.Text + "").Trim()
   if ($adminKey) {
-    [System.Windows.Forms.Clipboard]::SetText($adminKey)
-    Set-Status "管理员 Key 已复制到剪贴板。打开管理台后请粘贴登录。"
+    Set-Status "正在打开管理台并自动登录。"
+    Open-Url "$adminUrl/?key=$([Uri]::EscapeDataString($adminKey))"
+    return
   } else {
     Set-Status "正在打开管理台。"
   }
@@ -278,9 +290,13 @@ $friendGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([Syste
 [void]$friendGroup.Controls.Add($friendGrid)
 
 $friendSlugBox = New-TextBox "例如 friend-preview 或 u_xxxxx"
+$friendApiKeyBox = New-TextBox "网页管理台创建通道后生成的 agk_..."
 [void]$friendGrid.Controls.Add((New-Label "朋友短地址"))
 [void]$friendGrid.Controls.Add($friendSlugBox)
 [void]$friendGrid.Controls.Add((New-Button "随机生成" { $friendSlugBox.Text = New-RandomSlug }))
+[void]$friendGrid.Controls.Add((New-Label "朋友 API Key"))
+[void]$friendGrid.Controls.Add($friendApiKeyBox)
+[void]$friendGrid.Controls.Add((New-Button "清空" { $friendApiKeyBox.Text = "" }))
 [void]$root.Controls.Add($friendGroup)
 
 $buttonBar = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -292,8 +308,10 @@ $buttonBar.Margin = New-Object System.Windows.Forms.Padding(0, 12, 0, 0)
 [void]$buttonBar.Controls.Add((New-Button "读取概览" { Invoke-Overview }))
 [void]$buttonBar.Controls.Add((New-Button "打开管理台" { Open-AdminPortal }))
 [void]$buttonBar.Controls.Add((New-Button "打开朋友页" { $url = Get-FriendPortalUrl; if ($url) { Open-Url $url } }))
+[void]$buttonBar.Controls.Add((New-Button "打开统计页" { $url = Get-FriendLoginUrl; if ($url) { Open-Url $url } }))
 [void]$buttonBar.Controls.Add((New-Button "复制 API 网址" { Copy-Text (Get-ApiBaseUrl) }))
 [void]$buttonBar.Controls.Add((New-Button "复制朋友页" { Copy-Text (Get-FriendPortalUrl) }))
+[void]$buttonBar.Controls.Add((New-Button "复制统计页" { Copy-Text (Get-FriendLoginUrl) }))
 [void]$root.Controls.Add($buttonBar)
 
 $statusBox = New-Object System.Windows.Forms.TextBox

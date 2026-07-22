@@ -2,7 +2,7 @@
   "use strict";
 
   const state = {
-    adminKey: sessionStorage.getItem("ag_external_gateway_admin_key") || "",
+    adminKey: urlKey("key") || urlKey("admin_key") || sessionStorage.getItem("ag_external_gateway_admin_key") || "",
     overview: null,
     channels: [],
     accounts: [],
@@ -39,6 +39,7 @@
     rawApiKey: $("#rawApiKey"),
     modalEndpoint: $("#modalEndpoint"),
     modalPortalEndpoint: $("#modalPortalEndpoint"),
+    modalLoginEndpoint: $("#modalLoginEndpoint"),
     editModal: $("#editModal"),
     editForm: $("#editChannelForm"),
     editAccount: $("#editAccount"),
@@ -49,6 +50,28 @@
 
   function getAdminKey() {
     return elements.adminKey.value.trim();
+  }
+
+  function urlKey(name) {
+    try {
+      return String(new URLSearchParams(window.location.search).get(name) || "").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function clearSensitiveQuery(names) {
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      names.forEach((name) => {
+        if (url.searchParams.has(name)) {
+          url.searchParams.delete(name);
+          changed = true;
+        }
+      });
+      if (changed) window.history.replaceState({}, document.title, url.pathname + (url.search || "") + (url.hash || ""));
+    } catch (_) {}
   }
 
   function setMessage(element, message, type) {
@@ -173,6 +196,19 @@
     }
     const slug = accessSlugFor(channel);
     return slug ? userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/" : "";
+  }
+
+  function appendKeyToUrl(baseUrl, key) {
+    const cleanKey = String(key || "").trim();
+    if (!baseUrl || !cleanKey) return baseUrl || "";
+    try {
+      const url = new URL(baseUrl, window.location.origin);
+      url.searchParams.set("key", cleanKey);
+      return url.toString();
+    } catch (_) {
+      const separator = String(baseUrl).includes("?") ? "&" : "?";
+      return String(baseUrl) + separator + "key=" + encodeURIComponent(cleanKey);
+    }
   }
 
   function normalizeBaseUrl(url) {
@@ -468,6 +504,7 @@
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
     elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
+    if (elements.modalLoginEndpoint) elements.modalLoginEndpoint.textContent = appendKeyToUrl(friendPortalFor(channel || {}), apiKey);
     openModal(elements.keyModal);
   }
 
@@ -679,6 +716,10 @@
 
   function wireEvents() {
     elements.adminKey.value = state.adminKey;
+    if (state.adminKey) {
+      sessionStorage.setItem("ag_external_gateway_admin_key", state.adminKey);
+      clearSensitiveQuery(["key", "admin_key"]);
+    }
     $("#saveAdminKey").addEventListener("click", () => {
       const key = getAdminKey();
       if (!key) {
@@ -723,6 +764,8 @@
     $("#copyRawApiKey").addEventListener("click", () => copyText(elements.rawApiKey.textContent, "已复制 API Key。"));
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
     $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制用户控制台地址。"));
+    const copyModalLoginEndpoint = $("#copyModalLoginEndpoint");
+    if (copyModalLoginEndpoint) copyModalLoginEndpoint.addEventListener("click", () => copyText(elements.modalLoginEndpoint.textContent, "已复制一键登录统计页。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
 
     document.addEventListener("click", (event) => {

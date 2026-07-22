@@ -56,6 +56,29 @@
     }
   }
 
+  function urlKey() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      return String(params.get("key") || params.get("api_key") || params.get("access_key") || "").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function clearSensitiveQuery() {
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      ["key", "api_key", "access_key"].forEach((name) => {
+        if (url.searchParams.has(name)) {
+          url.searchParams.delete(name);
+          changed = true;
+        }
+      });
+      if (changed) window.history.replaceState({}, document.title, url.pathname + (url.search || "") + (url.hash || ""));
+    } catch (_) {}
+  }
+
   function setStoredKey(value) {
     try {
       if (value) sessionStorage.setItem(sessionKeyName, value);
@@ -507,6 +530,12 @@
     setConnection("地址无效", "error");
     setMessage(elements.connectMessage, "当前访问地址无效。", "error");
     return;
+  }
+
+  const queryKey = urlKey();
+  if (queryKey) {
+    setStoredKey(queryKey);
+    clearSensitiveQuery();
   }
 
   if (storedKey()) {
