@@ -208,7 +208,15 @@
   function renderAllowedModels(models) {
     elements.allowedModels.replaceChildren();
     const allowed = Array.isArray(models) ? models.map((item) => String(item || "").trim()).filter(Boolean) : [];
-    if (!allowed.length || allowed.includes("*")) {
+    if (!allowed.length) {
+      elements.allowedModelSummary.textContent = "未配置允许模型（全部禁止）";
+      const chip = document.createElement("span");
+      chip.className = "model-chip";
+      chip.textContent = "未配置允许模型";
+      elements.allowedModels.append(chip);
+      return;
+    }
+    if (allowed.includes("*")) {
       elements.allowedModelSummary.textContent = "全部可用模型";
       const chip = document.createElement("span");
       chip.className = "model-chip";
