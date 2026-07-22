@@ -134,6 +134,21 @@
                 失效时间
                 <input name="expires_at" type="datetime-local">
               </label>
+              <div class="duration-control full-width">
+                <span>从现在起有效</span>
+                <input id="createDurationDays" type="number" min="1" max="3650" step="1" value="30" inputmode="numeric" aria-label="新建通道有效天数">
+                <span>天</span>
+                <button class="button button-quiet" id="applyCreateDuration" type="button">自动填写时间</button>
+                <div class="duration-presets" aria-label="新建通道快捷有效期">
+                  <button type="button" data-duration-target="create" data-duration-days="1">1天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="2">2天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="3">3天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="5">5天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="7">7天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="10">10天</button>
+                  <button type="button" data-duration-target="create" data-duration-days="30">30天</button>
+                </div>
+              </div>
             </div>
             <label class="switch-row">
               <input name="enabled" type="checkbox" checked>
@@ -310,6 +325,21 @@
           <div class="form-grid two-columns">
             <label>生效时间<input name="starts_at" type="datetime-local"></label>
             <label class="full-width">失效时间<input name="expires_at" type="datetime-local"></label>
+            <div class="duration-control full-width">
+              <span>从现在起有效</span>
+              <input id="editDurationDays" type="number" min="1" max="3650" step="1" value="30" inputmode="numeric" aria-label="编辑通道有效天数">
+              <span>天</span>
+              <button class="button button-quiet" id="applyEditDuration" type="button">自动填写时间</button>
+              <div class="duration-presets" aria-label="编辑通道快捷有效期">
+                <button type="button" data-duration-target="edit" data-duration-days="1">1天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="2">2天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="3">3天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="5">5天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="7">7天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="10">10天</button>
+                <button type="button" data-duration-target="edit" data-duration-days="30">30天</button>
+              </div>
+            </div>
           </div>
           <label class="switch-row">
             <input name="enabled" type="checkbox">
