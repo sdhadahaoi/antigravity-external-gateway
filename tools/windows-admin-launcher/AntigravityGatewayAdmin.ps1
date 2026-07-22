@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$Check
 )
 
@@ -8,7 +8,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 if ($Check) {
-  Write-Output "AntigravityGatewayAdmin.ps1 syntax ok"
+  Write-Output "AntigravityGatewayAdmin.ps1 语法检查通过"
   return
 }
 
@@ -100,11 +100,11 @@ function Get-FriendPortalUrl {
   $userUrl = Normalize-BaseUrl $userBaseUrlBox.Text
   $slug = ($friendSlugBox.Text + "").Trim().ToLowerInvariant()
   if (-not $userUrl) {
-    Set-Status "Please enter the User/API URL first."
+    Set-Status "请先填写用户/API 网址。"
     return ""
   }
   if (-not (Test-Slug $slug)) {
-    Set-Status "Friend slug must be 3-64 chars: lowercase letters, numbers, '-' or '_', starting with a letter/number."
+    Set-Status "朋友短地址必须是 3-64 位：小写字母、数字、连字符或下划线，并以字母/数字开头。"
     return ""
   }
   return "$userUrl/u/$([Uri]::EscapeDataString($slug))/"
@@ -120,7 +120,7 @@ function Copy-Text {
   param([string]$Text)
   if (-not $Text) { return }
   [System.Windows.Forms.Clipboard]::SetText($Text)
-  Set-Status "Copied:`r`n$Text"
+  Set-Status "已复制：`r`n$Text"
 }
 
 function Save-Config {
@@ -136,9 +136,9 @@ function Save-Config {
   }
   $config | ConvertTo-Json | Set-Content -Encoding UTF8 -Path $configPath
   if ($rememberKeyBox.Checked) {
-    Set-Status "Settings saved. Admin key is stored only in your Windows user profile."
+    Set-Status "设置已保存。管理员 Key 只保存在当前 Windows 用户配置目录。"
   } else {
-    Set-Status "Settings saved. Admin key was not written to disk."
+    Set-Status "设置已保存。管理员 Key 未写入磁盘。"
   }
 }
 
@@ -153,21 +153,21 @@ function Load-Config {
       $adminKeyBox.Text = $config.adminKey
     }
   } catch {
-    Set-Status ("Failed to load settings: " + $_.Exception.Message)
+    Set-Status ("读取设置失败：" + $_.Exception.Message)
   }
 }
 
 function Invoke-HealthCheck {
   $adminUrl = Normalize-BaseUrl $adminBaseUrlBox.Text
   if (-not $adminUrl) {
-    Set-Status "Please enter the Admin URL first."
+    Set-Status "请先填写管理员网址。"
     return
   }
   try {
     $response = Invoke-WebRequest -UseBasicParsing -Uri "$adminUrl/health" -TimeoutSec 20
-    Set-Status ("Health check ok: HTTP " + [int]$response.StatusCode)
+    Set-Status ("健康检查通过：HTTP " + [int]$response.StatusCode)
   } catch {
-    Set-Status ("Health check failed: " + $_.Exception.Message)
+    Set-Status ("健康检查失败：" + $_.Exception.Message)
   }
 }
 
@@ -175,7 +175,7 @@ function Invoke-Overview {
   $adminUrl = Normalize-BaseUrl $adminBaseUrlBox.Text
   $adminKey = ($adminKeyBox.Text + "").Trim()
   if (-not $adminUrl -or -not $adminKey) {
-    Set-Status "Please enter the Admin URL and Admin Key first."
+    Set-Status "请先填写管理员网址和管理员 Key。"
     return
   }
   try {
@@ -184,32 +184,32 @@ function Invoke-Overview {
     $channelCount = @($overview.channels).Count
     $accountCount = @($overview.accounts).Count
     $modelCount = @($overview.models).Count
-    $upstream = "no"
-    if ($overview.config.upstream_configured) { $upstream = "yes" }
-    Set-Status "Overview loaded.`r`nChannels: $channelCount`r`nCredential windows: $accountCount`r`nModels: $modelCount`r`nUpstream configured: $upstream"
+    $upstream = "否"
+    if ($overview.config.upstream_configured) { $upstream = "是" }
+    Set-Status "概览读取成功。`r`n外接通道：$channelCount`r`n可用凭证窗口：$accountCount`r`n可用模型：$modelCount`r`n上游已配置：$upstream"
   } catch {
-    Set-Status ("Overview failed: " + $_.Exception.Message)
+    Set-Status ("读取概览失败：" + $_.Exception.Message)
   }
 }
 
 function Open-AdminPortal {
   $adminUrl = Normalize-BaseUrl $adminBaseUrlBox.Text
   if (-not $adminUrl) {
-    Set-Status "Please enter the Admin URL first."
+    Set-Status "请先填写管理员网址。"
     return
   }
   $adminKey = ($adminKeyBox.Text + "").Trim()
   if ($adminKey) {
     [System.Windows.Forms.Clipboard]::SetText($adminKey)
-    Set-Status "Admin key copied to clipboard. Paste it into the admin page."
+    Set-Status "管理员 Key 已复制到剪贴板。打开管理台后请粘贴登录。"
   } else {
-    Set-Status "Opening admin page."
+    Set-Status "正在打开管理台。"
   }
   Open-Url "$adminUrl/"
 }
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Antigravity Gateway Admin"
+$form.Text = "Antigravity 外接网关管理器"
 $form.StartPosition = "CenterScreen"
 $form.Size = New-Object System.Drawing.Size(760, 560)
 $form.MinimumSize = New-Object System.Drawing.Size(680, 500)
@@ -227,14 +227,14 @@ $root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Fo
 [void]$form.Controls.Add($root)
 
 $title = New-Object System.Windows.Forms.Label
-$title.Text = "Antigravity External Gateway Launcher"
+$title.Text = "Antigravity 外接网关管理器"
 $title.AutoSize = $true
 $title.Font = New-Object System.Drawing.Font($form.Font.FontFamily, 15, [System.Drawing.FontStyle]::Bold)
 $title.Margin = New-Object System.Windows.Forms.Padding(0, 0, 0, 14)
 [void]$root.Controls.Add($title)
 
 $settingsGroup = New-Object System.Windows.Forms.GroupBox
-$settingsGroup.Text = "Gateway Settings"
+$settingsGroup.Text = "网关设置"
 $settingsGroup.Dock = "Top"
 $settingsGroup.AutoSize = $true
 $settingsGroup.Padding = New-Object System.Windows.Forms.Padding(12)
@@ -251,19 +251,19 @@ $userBaseUrlBox = New-TextBox "https://api.example.com"
 $adminKeyBox = New-TextBox "GATEWAY_ADMIN_KEY"
 $adminKeyBox.UseSystemPasswordChar = $true
 $rememberKeyBox = New-Object System.Windows.Forms.CheckBox
-$rememberKeyBox.Text = "Remember admin key on this computer"
+$rememberKeyBox.Text = "在这台电脑上记住管理员 Key"
 $rememberKeyBox.AutoSize = $true
 $rememberKeyBox.Margin = New-Object System.Windows.Forms.Padding(0, 8, 0, 0)
 
-Add-Row $settingsGrid "Admin URL" $adminBaseUrlBox
-Add-Row $settingsGrid "User/API URL" $userBaseUrlBox
-Add-Row $settingsGrid "Admin Key" $adminKeyBox
+Add-Row $settingsGrid "管理员网址" $adminBaseUrlBox
+Add-Row $settingsGrid "用户/API 网址" $userBaseUrlBox
+Add-Row $settingsGrid "管理员 Key" $adminKeyBox
 [void]$settingsGrid.Controls.Add((New-Object System.Windows.Forms.Label))
 [void]$settingsGrid.Controls.Add($rememberKeyBox)
 [void]$root.Controls.Add($settingsGroup)
 
 $friendGroup = New-Object System.Windows.Forms.GroupBox
-$friendGroup.Text = "Friend Portal"
+$friendGroup.Text = "朋友入口"
 $friendGroup.Dock = "Top"
 $friendGroup.AutoSize = $true
 $friendGroup.Padding = New-Object System.Windows.Forms.Padding(12)
@@ -277,23 +277,23 @@ $friendGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([Syste
 $friendGrid.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 120))) | Out-Null
 [void]$friendGroup.Controls.Add($friendGrid)
 
-$friendSlugBox = New-TextBox "friend-preview or u_xxxxx"
-[void]$friendGrid.Controls.Add((New-Label "Friend slug"))
+$friendSlugBox = New-TextBox "例如 friend-preview 或 u_xxxxx"
+[void]$friendGrid.Controls.Add((New-Label "朋友短地址"))
 [void]$friendGrid.Controls.Add($friendSlugBox)
-[void]$friendGrid.Controls.Add((New-Button "Random" { $friendSlugBox.Text = New-RandomSlug }))
+[void]$friendGrid.Controls.Add((New-Button "随机生成" { $friendSlugBox.Text = New-RandomSlug }))
 [void]$root.Controls.Add($friendGroup)
 
 $buttonBar = New-Object System.Windows.Forms.FlowLayoutPanel
 $buttonBar.Dock = "Top"
 $buttonBar.AutoSize = $true
 $buttonBar.Margin = New-Object System.Windows.Forms.Padding(0, 12, 0, 0)
-[void]$buttonBar.Controls.Add((New-Button "Save" { Save-Config }))
-[void]$buttonBar.Controls.Add((New-Button "Health" { Invoke-HealthCheck }))
-[void]$buttonBar.Controls.Add((New-Button "Overview" { Invoke-Overview }))
-[void]$buttonBar.Controls.Add((New-Button "Open Admin" { Open-AdminPortal }))
-[void]$buttonBar.Controls.Add((New-Button "Open Friend" { $url = Get-FriendPortalUrl; if ($url) { Open-Url $url } }))
-[void]$buttonBar.Controls.Add((New-Button "Copy API URL" { Copy-Text (Get-ApiBaseUrl) }))
-[void]$buttonBar.Controls.Add((New-Button "Copy Portal URL" { Copy-Text (Get-FriendPortalUrl) }))
+[void]$buttonBar.Controls.Add((New-Button "保存设置" { Save-Config }))
+[void]$buttonBar.Controls.Add((New-Button "健康检查" { Invoke-HealthCheck }))
+[void]$buttonBar.Controls.Add((New-Button "读取概览" { Invoke-Overview }))
+[void]$buttonBar.Controls.Add((New-Button "打开管理台" { Open-AdminPortal }))
+[void]$buttonBar.Controls.Add((New-Button "打开朋友页" { $url = Get-FriendPortalUrl; if ($url) { Open-Url $url } }))
+[void]$buttonBar.Controls.Add((New-Button "复制 API 网址" { Copy-Text (Get-ApiBaseUrl) }))
+[void]$buttonBar.Controls.Add((New-Button "复制朋友页" { Copy-Text (Get-FriendPortalUrl) }))
 [void]$root.Controls.Add($buttonBar)
 
 $statusBox = New-Object System.Windows.Forms.TextBox
@@ -306,5 +306,5 @@ $statusBox.Margin = New-Object System.Windows.Forms.Padding(0, 14, 0, 0)
 [void]$root.Controls.Add($statusBox)
 
 Load-Config
-Set-Status "Ready. This launcher never stores upstream OAuth or upstream API keys."
+Set-Status "就绪。这个启动器不会保存上游 OAuth 或上游 API Key。"
 [void]$form.ShowDialog()

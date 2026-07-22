@@ -183,3 +183,42 @@ cd tools\windows-admin-launcher
 ```
 
 生成文件位于 `tools/windows-admin-launcher/dist/AntigravityGatewayAdmin.exe`。不要把本机生成的配置文件或管理员 Key 发给朋友。
+
+## 部署后的两个网址怎么来
+
+Render 只需要创建**一个** Web Service，但建议绑定**两个不同的自定义域名**到同一个服务：
+
+```text
+管理员网址：https://admin.example.com/
+用户/API 网址：https://api.example.com/
+```
+
+在 Render 的 Environment 页面中填：
+
+```text
+GATEWAY_ADMIN_BASE_URL=https://admin.example.com
+GATEWAY_USER_BASE_URL=https://api.example.com
+```
+
+这样管理后台创建通道后，生成给朋友的地址会是：
+
+```text
+朋友控制台：https://api.example.com/u/<朋友短地址>/
+API Base URL：https://api.example.com/u/<朋友短地址>/v1
+```
+
+管理员自己访问：
+
+```text
+https://admin.example.com/
+```
+
+如果暂时没有自定义域名，也可以先用 Render 默认的 `https://xxx.onrender.com` 跑通流程：
+
+```text
+管理员：https://xxx.onrender.com/
+朋友：https://xxx.onrender.com/u/<朋友短地址>/
+API：https://xxx.onrender.com/u/<朋友短地址>/v1
+```
+
+但这种单域名模式下，用户理论上能猜到同一个站点的根路径，所以正式给朋友使用时更推荐双域名。双域名模式下，用户域名访问管理接口会返回 404，管理员域名访问用户接口也会返回 404。

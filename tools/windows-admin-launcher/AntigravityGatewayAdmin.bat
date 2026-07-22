@@ -6,7 +6,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0AntigravityGa
 
 if errorlevel 1 (
   echo.
-  echo Antigravity Gateway Admin failed to start.
-  echo Make sure Windows PowerShell is available on this computer.
+  echo Antigravity 外接网关管理器启动失败。
+  echo 请确认这台电脑可以使用 Windows PowerShell。
   pause
 )
