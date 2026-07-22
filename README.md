@@ -100,6 +100,7 @@ https://api.example.com/u/<朋友专属短地址>/v1
 | `GATEWAY_PUBLIC_BASE_URL` | 旧版单一公开基础 URL 的兼容回退 | 新部署不建议设置；仅在尚未拆分域名的旧部署中使用 |
 | `GATEWAY_MAX_BODY_BYTES` | 单请求最大正文大小（字节） | 代码默认 `2097152`（2 MiB）；`render.yaml` 示例显式设为 `10485760`（10 MiB） |
 | `GATEWAY_MAX_PENDING_BODY_READS` | 未配置通道并发上限时，单通道最多同时读取的请求正文数 | 默认 `2` |
+| `GATEWAY_MODEL_ALIASES` | 可选模型别名，供 Cherry 等 HTTP 客户端使用 | 逗号分隔 `alias:target`，例：`sonnet:claude-sonnet-4-6-thinking-ag,gemini-high:gemini-3-5-flash-high-ag` |
 
 `UPSTREAM_BRIDGE_URL` 和 `UPSTREAM_BRIDGE_API_KEY` 是唯一接触原服务的变量，应只在 Render 的 Environment 页面设置为 Secret。浏览器端、日志、JSON 导出和错误信息都不应回显它们。
 
