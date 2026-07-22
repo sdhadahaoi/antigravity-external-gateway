@@ -32,6 +32,8 @@
     maxOutputTokens: $("maxOutputTokens"),
     allowedModelSummary: $("allowedModelSummary"),
     allowedModels: $("allowedModels"),
+    refreshQuota: $("refreshQuota"),
+    oauthQuotaResult: $("oauthQuotaResult"),
     modelSelect: $("modelSelect"),
     testPrompt: $("testPrompt"),
     sendTest: $("sendTest"),
@@ -186,6 +188,7 @@
     elements.estimateButton.disabled = !storedKey();
     elements.logLimit.disabled = !storedKey();
     elements.refreshLogs.disabled = !storedKey();
+    if (elements.refreshQuota) elements.refreshQuota.disabled = !storedKey();
     if (!enabled) elements.retryTest.disabled = true;
   }
 
@@ -302,6 +305,97 @@
     setDashboardEnabled(state.available);
   }
 
+  function percentText(value) {
+    return Number.isFinite(Number(value)) ? Math.round(Number(value)) + "%" : "--";
+  }
+
+  function quotaClass(percent) {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return "bad";
+    return value >= 60 ? "ok" : value >= 20 ? "warn" : "bad";
+  }
+
+  function tokenText(value) {
+    return isSet(value) && Number.isFinite(Number(value)) ? formatNumber(value) + " Token" : "--";
+  }
+
+  function appendText(parent, tag, text, className) {
+    const node = document.createElement(tag);
+    node.textContent = text;
+    if (className) node.className = className;
+    parent.append(node);
+    return node;
+  }
+
+  function renderQuota(payload) {
+    if (!elements.oauthQuotaResult) return;
+    elements.oauthQuotaResult.replaceChildren();
+    const models = Array.isArray(payload && payload.model_quotas) ? payload.model_quotas : [];
+    const families = Array.isArray(payload && payload.token_estimate && payload.token_estimate.families) ? payload.token_estimate.families : [];
+    if (!models.length && !families.length) {
+      elements.oauthQuotaResult.textContent = "暂时没有可显示的 OAuth 额度；请确认管理员已给这个朋友选择模型，并且指定窗口绑定了 OAuth 凭证。";
+      return;
+    }
+
+    if (models.length) {
+      appendText(elements.oauthQuotaResult, "h3", "允许模型额度");
+      const grid = document.createElement("div");
+      grid.className = "quota-model-grid";
+      for (const item of models) {
+        const card = document.createElement("article");
+        card.className = "quota-mini-card";
+        appendText(card, "h3", item.id || "模型");
+        appendText(card, "p", "模型池：" + (item.family_label || item.family || "--"));
+        appendText(card, "p", "综合剩余：" + percentText(item.percent));
+        const list = document.createElement("div");
+        list.className = "quota-window-list";
+        for (const windowItem of (item.windows || [])) {
+          const row = document.createElement("div");
+          row.className = "quota-window " + quotaClass(windowItem.percent);
+          appendText(row, "span", windowItem.window_id || "窗口");
+          appendText(row, "strong", percentText(windowItem.percent));
+          row.title = windowItem.source_model
+            ? "来源模型：" + windowItem.source_model + (windowItem.match === "family" ? "（同模型池估算）" : "")
+            : (windowItem.reason || "无额度数据");
+          list.append(row);
+        }
+        card.append(list);
+        grid.append(card);
+      }
+      elements.oauthQuotaResult.append(grid);
+    }
+
+    if (families.length) {
+      appendText(elements.oauthQuotaResult, "h3", "预估可用 Token");
+      const grid = document.createElement("div");
+      grid.className = "quota-family-grid";
+      for (const family of families) {
+        const card = document.createElement("article");
+        card.className = "quota-mini-card";
+        appendText(card, "h3", family.label || family.id || "模型池");
+        appendText(card, "p", "有效剩余：" + tokenText(family.effective && family.effective.remaining_tokens));
+        appendText(card, "p", "5h 剩余：" + tokenText(family.five_hour && family.five_hour.remaining_tokens));
+        appendText(card, "p", "7d 剩余：" + tokenText(family.seven_day && family.seven_day.remaining_tokens));
+        appendText(card, "p", "输入/输出比：" + ((family.five_hour && family.five_hour.input_output_ratio) || (family.seven_day && family.seven_day.input_output_ratio) || "--"));
+        grid.append(card);
+      }
+      elements.oauthQuotaResult.append(grid);
+    }
+  }
+
+  async function loadQuota() {
+    if (!storedKey() || !elements.oauthQuotaResult) return;
+    elements.refreshQuota.disabled = true;
+    elements.oauthQuotaResult.textContent = "正在读取 OAuth 额度";
+    try {
+      renderQuota(await request("/user/quota"));
+    } catch (error) {
+      elements.oauthQuotaResult.textContent = error.message || "OAuth 额度暂时不可用";
+    } finally {
+      elements.refreshQuota.disabled = !storedKey();
+    }
+  }
+
   function logResult(entry) {
     const status = String(entry.status || entry.reason || entry.event || "-").toLowerCase();
     if (/ok|complete|success/.test(status)) return { label: "完成", className: "result-ok" };
@@ -375,6 +469,7 @@
     elements.disconnectButton.hidden = false;
     if (!options.skipModels) await loadModels();
     if (!options.skipLogs) await loadLogs();
+    if (!options.skipQuota) await loadQuota();
     return payload;
   }
 
@@ -495,7 +590,11 @@
         method: "POST",
         body: JSON.stringify({ text }),
       });
-      elements.estimateResult.textContent = "约 " + formatNumber(payload.estimate_tokens) + " Token";
+      const output = isSet(payload.max_output_tokens) ? formatNumber(payload.max_output_tokens) + " Token" : "未设置输出上限";
+      elements.estimateResult.textContent = "输入约 " + formatNumber(payload.input_tokens || payload.estimate_tokens) +
+        " Token；最大输出 " + output +
+        "；预估总量 " + formatNumber(payload.estimated_total_tokens || payload.estimate_tokens) +
+        " Token；输入/输出比 " + (payload.input_output_ratio || "--");
     } catch (error) {
       elements.estimateResult.textContent = error.message || "暂时无法计算";
     } finally {
@@ -513,6 +612,7 @@
     elements.apiKey.value = "";
     elements.testResponse.textContent = "等待测试请求";
     elements.estimateResult.textContent = "等待输入";
+    if (elements.oauthQuotaResult) elements.oauthQuotaResult.textContent = "连接后查看被允许模型的剩余额度和预估 Token。";
     clearModelOptions("连接后加载模型");
     renderLogs([]);
     setConnection("等待连接", "");
@@ -527,6 +627,7 @@
   elements.disconnectButton.addEventListener("click", disconnect);
   elements.refreshOverview.addEventListener("click", refreshOverview);
   elements.refreshLogs.addEventListener("click", () => { void loadLogs(); });
+  if (elements.refreshQuota) elements.refreshQuota.addEventListener("click", () => { void loadQuota(); });
   elements.logLimit.addEventListener("change", () => { void loadLogs(); });
   elements.estimateText.addEventListener("input", updateCharacterCount);
   elements.estimateButton.addEventListener("click", () => { void estimateTokens(); });
