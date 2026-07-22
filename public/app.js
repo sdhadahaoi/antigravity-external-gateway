@@ -40,6 +40,8 @@
     estimateText: $("#estimateText"),
     estimateCharacters: $("#estimateCharacters"),
     estimateResult: $("#estimateResult"),
+    adminQuotaResult: $("#adminQuotaResult"),
+    refreshAdminQuota: $("#refreshAdminQuota"),
     keyModal: $("#keyModal"),
     rawApiKey: $("#rawApiKey"),
     modalEndpoint: $("#modalEndpoint"),
@@ -684,6 +686,7 @@
       setMessage(elements.adminMessage, "已连接管理端。", "success");
       if (showFeedback) showToast("控制台已刷新。");
       await loadLogs();
+      await loadAdminQuota();
     } catch (error) {
       const message = asErrorMessage(error, "无法读取控制台。");
       setMessage(elements.adminMessage, message, "error");
@@ -1119,6 +1122,86 @@
     }
   }
 
+  function percentText(value) {
+    return Number.isFinite(Number(value)) ? Math.round(Number(value)) + "%" : "--";
+  }
+
+  function tokenText(value) {
+    return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
+      ? formatNumber(value) + " Token"
+      : "--";
+  }
+
+  function quotaCardClass(percent) {
+    const value = Number(percent);
+    if (!Number.isFinite(value)) return "bad";
+    return value >= 60 ? "ok" : value >= 20 ? "warn" : "bad";
+  }
+
+  function modelFamily(model) {
+    const value = String(model || "").toLowerCase();
+    if (value.includes("claude") || value.includes("gpt")) return "Claude / GPT";
+    if (value.includes("gemini")) return "Gemini";
+    return "Unknown";
+  }
+
+  function renderAdminQuota(payload) {
+    if (!elements.adminQuotaResult) return;
+    const credentials = Array.isArray(payload?.quota?.credentials) ? payload.quota.credentials : [];
+    const families = Array.isArray(payload?.token_estimate?.families) ? payload.token_estimate.families : [];
+    const models = credentials.flatMap((credential) => (Array.isArray(credential.models) ? credential.models : []).map((model) => ({
+      account: credential.profile || credential.name || "OAuth",
+      id: model.id || model.model || "",
+      label: model.label || model.displayName || model.display_name || model.id || "",
+      percent: model.remainingFraction == null ? null : Math.round(Number(model.remainingFraction) * 100),
+      reset: model.resetTime || model.reset_time || ""
+    })));
+
+    if (!models.length && !families.length) {
+      elements.adminQuotaResult.innerHTML = "<div class=\"empty-state\">暂时没有 OAuth 额度数据；请确认原 bridge 已绑定 OAuth 凭证。</div>";
+      return;
+    }
+
+    const modelHtml = models.length ? (
+      "<h3>全部模型额度</h3><div class=\"quota-model-grid\">" +
+      models.map((model) => "<article class=\"quota-mini-card\">" +
+        "<h3>" + html(model.label || model.id) + "</h3>" +
+        "<p>账号: " + html(model.account) + "</p>" +
+        "<p>模型池: " + html(modelFamily(model.id || model.label)) + "</p>" +
+        "<p>剩余: <strong>" + html(percentText(model.percent)) + "</strong></p>" +
+        (model.reset ? "<p>重置: " + html(formatDate(model.reset)) + "</p>" : "") +
+      "</article>").join("") +
+      "</div>"
+    ) : "";
+
+    const familyHtml = families.length ? (
+      "<h3>全部模型池 Token 预估</h3><div class=\"quota-family-grid\">" +
+      families.map((family) => "<article class=\"quota-mini-card\">" +
+        "<h3>" + html(family.label || family.id || "模型池") + "</h3>" +
+        "<p>有效剩余: <strong>" + html(tokenText(family.effective && family.effective.remaining_tokens)) + "</strong></p>" +
+        "<p>5h 剩余: " + html(tokenText(family.five_hour && family.five_hour.remaining_tokens)) + "</p>" +
+        "<p>7d 剩余: " + html(tokenText(family.seven_day && family.seven_day.remaining_tokens)) + "</p>" +
+        "<p>输入/输出比: " + html((family.five_hour && family.five_hour.input_output_ratio) || (family.seven_day && family.seven_day.input_output_ratio) || "--") + "</p>" +
+      "</article>").join("") +
+      "</div>"
+    ) : "";
+
+    elements.adminQuotaResult.innerHTML = modelHtml + familyHtml;
+  }
+
+  async function loadAdminQuota() {
+    if (!elements.adminQuotaResult || !getAdminKey()) return;
+    if (elements.refreshAdminQuota) elements.refreshAdminQuota.disabled = true;
+    elements.adminQuotaResult.textContent = "正在读取 OAuth 额度...";
+    try {
+      renderAdminQuota(await api("/api/admin/quota"));
+    } catch (error) {
+      elements.adminQuotaResult.innerHTML = "<div class=\"empty-state\">" + html(asErrorMessage(error, "OAuth 额度暂时不可用。")) + "</div>";
+    } finally {
+      if (elements.refreshAdminQuota) elements.refreshAdminQuota.disabled = false;
+    }
+  }
+
   function wireEvents() {
     elements.adminKey.value = state.adminKey;
     if (state.adminKey) {
@@ -1141,6 +1224,7 @@
       state.channels = [];
       state.accounts = [];
       state.models = [];
+      if (elements.adminQuotaResult) elements.adminQuotaResult.textContent = "连接管理端后查看全部模型额度与 Token 预估。";
       elements.channelsList.innerHTML = "<div class=\"empty-state\">输入管理密钥后可查看并管理多个朋友的信息、地址和 API Key。</div>";
       elements.logsBody.innerHTML = "<tr><td colspan=\"6\" class=\"table-empty\">连接管理端后加载日志。</td></tr>";
       setMessage(elements.adminMessage, "已清除当前会话中的管理密钥。", "");
@@ -1149,6 +1233,7 @@
       if (event.key === "Enter") $("#saveAdminKey").click();
     });
     $("#refreshOverview").addEventListener("click", () => loadOverview(true));
+    if (elements.refreshAdminQuota) elements.refreshAdminQuota.addEventListener("click", () => loadAdminQuota());
     $("#copyAllFriendBackups").addEventListener("click", copyAllFriendBackups);
     $("#downloadAllFriendBackups").addEventListener("click", downloadAllFriendBackups);
     $("#importFriendBackups").addEventListener("click", () => elements.friendBackupFile.click());
