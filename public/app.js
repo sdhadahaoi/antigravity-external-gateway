@@ -699,6 +699,19 @@
     return text === "" ? null : text;
   }
 
+  function datetimeLocalToIsoOrNull(value) {
+    const text = String(value == null ? "" : value).trim();
+    if (!text) return null;
+    // Values from <input type="datetime-local"> have no timezone. Convert them
+    // in the browser so Render/Node does not interpret Beijing local time as UTC.
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(text)) {
+      const date = new Date(text);
+      if (Number.isNaN(date.getTime())) return text;
+      return date.toISOString();
+    }
+    return text;
+  }
+
   function numericOrNull(value) {
     const text = String(value == null ? "" : value).trim();
     if (text === "") return null;
@@ -836,8 +849,8 @@
       target_window_id: targetWindows[0],
       target_window_ids: targetWindows,
       allowed_models: allowedModels,
-      starts_at: valueOrNull(values.get("starts_at")),
-      expires_at: valueOrNull(values.get("expires_at")),
+      starts_at: datetimeLocalToIsoOrNull(values.get("starts_at")),
+      expires_at: datetimeLocalToIsoOrNull(values.get("expires_at")),
       enabled: values.get("enabled") === "on",
     };
 
