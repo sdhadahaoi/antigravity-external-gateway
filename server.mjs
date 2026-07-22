@@ -18,6 +18,7 @@ const MAX_BODY_BYTES = Math.max(1024, Number(process.env.GATEWAY_MAX_BODY_BYTES 
 const MAX_PENDING_BODY_READS = Math.max(1, Math.min(100, Number(process.env.GATEWAY_MAX_PENDING_BODY_READS || 2)));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS || 310000));
 const PUBLIC_DIR = path.join(process.cwd(), "public");
+const MODEL_ALIASES = parseModelAliases(process.env.GATEWAY_MODEL_ALIASES || "");
 const store = new ChannelStore(STORE_FILE);
 const pendingBodyReads = new Map();
 
@@ -45,6 +46,33 @@ function bearerToken(req) {
 
 function adminAuthorized(req) {
   return Boolean(ADMIN_KEY && safeEqual(bearerToken(req), ADMIN_KEY));
+}
+
+function parseModelAliases(value) {
+  const aliases = new Map();
+  const raw = String(value || "").trim();
+  if (!raw) return aliases;
+  let entries = [];
+  if (raw.startsWith("{")) {
+    try {
+      entries = Object.entries(JSON.parse(raw));
+    } catch {
+      entries = [];
+    }
+  } else {
+    entries = raw.split(/[\r\n,]+/).map(item => {
+      const separator = item.includes("=") ? "=" : ":";
+      const [alias, ...targetParts] = item.split(separator);
+      return [alias, targetParts.join(separator)];
+    });
+  }
+  for (const [aliasValue, targetValue] of entries) {
+    const alias = String(aliasValue || "").trim();
+    const target = String(targetValue || "").trim();
+    if (!alias || !target || alias === target) continue;
+    aliases.set(alias, target);
+  }
+  return aliases;
 }
 
 function ownerAuthorized(req) {
@@ -218,6 +246,23 @@ async function upstreamFetch(pathname, options = {}) {
   }
 }
 
+async function upstreamJson(pathname, options = {}) {
+  const response = await upstreamFetch(pathname, options);
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(payload?.message || payload?.error?.message || "Upstream request failed."), {
+      statusCode: response.status,
+      payload
+    });
+  }
+  return payload || {};
+}
+
 function upstreamWindowPath(windowId, suffix) {
   const clean = String(windowId || "").trim();
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(clean)) throw Object.assign(new Error("Invalid target window."), { statusCode: 400 });
@@ -269,17 +314,255 @@ async function upstreamModels() {
     const response = await upstreamFetch("/v1/models");
     if (!response.ok) return [];
     const payload = await response.json();
-    return Array.isArray(payload.data) ? payload.data.map(item => ({ id: String(item.id || ""), label: String(item.label || item.id || "") })).filter(item => item.id) : [];
+    const models = Array.isArray(payload.data) ? payload.data.map(item => ({ id: String(item.id || ""), label: String(item.label || item.id || "") })).filter(item => item.id) : [];
+    return withModelAliases(models);
   } catch {
     return [];
   }
 }
 
+function resolveModelAlias(model) {
+  const requested = String(model || "").trim();
+  return MODEL_ALIASES.get(requested) || requested;
+}
+
+function withModelAliases(models = []) {
+  const byId = new Map(models.map(model => [String(model.id || ""), model]));
+  const result = [...models];
+  for (const [alias, target] of MODEL_ALIASES.entries()) {
+    const targetModel = byId.get(target);
+    if (!targetModel || byId.has(alias)) continue;
+    result.push({
+      ...targetModel,
+      id: alias,
+      label: `${alias} -> ${targetModel.label || target}`,
+      source: "alias",
+      target
+    });
+    byId.set(alias, result.at(-1));
+  }
+  return result;
+}
+
 function modelAllowed(channel, model) {
   const allowed = Array.isArray(channel.allowed_models) ? channel.allowed_models.map(item => String(item).trim()).filter(Boolean) : [];
   const requested = String(model || "");
+  const resolved = resolveModelAlias(requested);
   return allowed.length > 0
-    && allowed.some(item => item === "*" || item === requested || (item.endsWith("*") && requested.startsWith(item.slice(0, -1))));
+    && allowed.some(item =>
+      item === "*"
+      || item === requested
+      || item === resolved
+      || (item.endsWith("*") && requested.startsWith(item.slice(0, -1)))
+      || (item.endsWith("*") && resolved.startsWith(item.slice(0, -1)))
+    );
+}
+
+function modelFamily(model = "") {
+  const value = String(resolveModelAlias(model) || model || "").toLowerCase();
+  if (value.includes("claude") || value.includes("gpt")) return "claude_gpt";
+  if (value.includes("gemini")) return "gemini";
+  return "";
+}
+
+function familyLabel(family = "") {
+  if (family === "claude_gpt") return "Claude / GPT";
+  if (family === "gemini") return "Gemini";
+  return family || "Unknown";
+}
+
+function modelMatchKey(model = "") {
+  return String(resolveModelAlias(model) || model || "")
+    .toLowerCase()
+    .replace(/[-_]?ag$/i, "")
+    .replace(/[-_]?thinking$/i, "")
+    .replace(/[-_]?medium$/i, "")
+    .replace(/[-_]?high$/i, "")
+    .replace(/[-_]?low$/i, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function allowedModelsForChannel(channel = {}) {
+  return (Array.isArray(channel.allowed_models) ? channel.allowed_models : [])
+    .map(item => String(item || "").trim())
+    .filter(Boolean);
+}
+
+function quotaPercent(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number * 100))) : null;
+}
+
+function inputOutputRatio(input, output) {
+  const left = Number(input || 0);
+  const right = Number(output || 0);
+  if (!Number.isFinite(left) || !Number.isFinite(right) || left <= 0 || right <= 0) return null;
+  const divisor = gcd(Math.round(left), Math.round(right));
+  return `${Math.round(left / divisor)}:${Math.round(right / divisor)}`;
+}
+
+function gcd(a, b) {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y) {
+    const next = x % y;
+    x = y;
+    y = next;
+  }
+  return x || 1;
+}
+
+function sanitizeQuotaModel(model = {}) {
+  const remainingFraction = model.remainingFraction ?? model.remaining_fraction ?? null;
+  return {
+    id: String(model.id || model.model || ""),
+    label: String(model.label || model.display_name || model.displayName || model.id || model.model || ""),
+    family: modelFamily(model.id || model.model || model.label || ""),
+    remaining_fraction: Number.isFinite(Number(remainingFraction)) ? Math.max(0, Math.min(1, Number(remainingFraction))) : null,
+    percent: quotaPercent(remainingFraction),
+    reset_time: String(model.resetTime || model.reset_time || "")
+  };
+}
+
+function bestQuotaModelForAllowed(allowedModel, quotaModels = []) {
+  const allowedKey = modelMatchKey(allowedModel);
+  const allowedFamily = modelFamily(allowedModel);
+  const sanitized = quotaModels.map(sanitizeQuotaModel).filter(item => item.id || item.label);
+  const exact = sanitized.find(item => modelMatchKey(item.id) === allowedKey);
+  if (exact) return { ...exact, match: "exact" };
+  const sameFamily = sanitized
+    .filter(item => item.family && item.family === allowedFamily)
+    .sort((left, right) => {
+      const a = left.remaining_fraction == null ? 2 : left.remaining_fraction;
+      const b = right.remaining_fraction == null ? 2 : right.remaining_fraction;
+      return a - b;
+    })[0];
+  return sameFamily ? { ...sameFamily, match: "family" } : null;
+}
+
+function compactTokenFamily(family = {}) {
+  const fiveInput = family.five_hour_presented_input_tokens ?? family.five_hour_historical_input_tokens ?? family.five_hour_latest_input_tokens ?? null;
+  const fiveOutput = family.five_hour_presented_output_tokens ?? family.five_hour_historical_output_tokens ?? family.five_hour_latest_output_tokens ?? null;
+  const sevenInput = family.seven_day_presented_input_tokens ?? family.seven_day_historical_input_tokens ?? family.seven_day_latest_input_tokens ?? null;
+  const sevenOutput = family.seven_day_presented_output_tokens ?? family.seven_day_historical_output_tokens ?? family.seven_day_latest_output_tokens ?? null;
+  return {
+    id: String(family.id || ""),
+    label: String(family.label || familyLabel(family.id)),
+    confidence: String(family.confidence || ""),
+    five_hour: {
+      capacity_tokens: family.five_hour_presented_capacity_tokens ?? family.five_hour_capacity_tokens ?? null,
+      remaining_tokens: family.five_hour_presented_remaining_tokens ?? family.five_hour_remaining_tokens ?? null,
+      input_tokens: fiveInput,
+      output_tokens: fiveOutput,
+      input_output_ratio: inputOutputRatio(fiveInput, fiveOutput)
+    },
+    seven_day: {
+      capacity_tokens: family.seven_day_presented_capacity_tokens ?? family.seven_day_capacity_tokens ?? null,
+      remaining_tokens: family.seven_day_presented_remaining_tokens ?? family.seven_day_remaining_tokens ?? null,
+      input_tokens: sevenInput,
+      output_tokens: sevenOutput,
+      input_output_ratio: inputOutputRatio(sevenInput, sevenOutput)
+    },
+    effective: {
+      capacity_tokens: family.presented_effective_capacity_tokens ?? family.effective_capacity_tokens ?? null,
+      remaining_tokens: family.presented_effective_remaining_tokens ?? family.effective_remaining_tokens ?? null
+    }
+  };
+}
+
+function compactTokenEstimate(report = {}, families = null) {
+  const allowedFamilies = families ? new Set(families) : null;
+  const items = (Array.isArray(report.families) ? report.families : [])
+    .filter(family => !allowedFamilies || allowedFamilies.has(String(family.id || "")))
+    .map(compactTokenFamily);
+  return {
+    ok: Boolean(report.ok),
+    generated_at: report.generated_at || "",
+    caveat: report.caveat || "",
+    families: items
+  };
+}
+
+async function upstreamQuotaBundle() {
+  const [quota, accountWindows, tokenEstimate] = await Promise.allSettled([
+    upstreamJson("/api/antigravity/quota"),
+    upstreamJson("/api/antigravity/account-windows"),
+    upstreamJson("/api/antigravity/token-estimate")
+  ]);
+  return {
+    quota: quota.status === "fulfilled" ? quota.value : { ok: false, message: quota.reason?.message || "额度暂时不可用。" },
+    account_windows: accountWindows.status === "fulfilled" ? accountWindows.value : { ok: false, windows: [], message: accountWindows.reason?.message || "窗口额度暂时不可用。" },
+    token_estimate: tokenEstimate.status === "fulfilled" ? tokenEstimate.value : { ok: false, families: [], message: tokenEstimate.reason?.message || "Token 预估暂时不可用。" }
+  };
+}
+
+function adminQuotaView(bundle = {}) {
+  return {
+    ok: true,
+    scope: "admin",
+    quota: bundle.quota || {},
+    account_windows: bundle.account_windows || {},
+    token_estimate: compactTokenEstimate(bundle.token_estimate || {})
+  };
+}
+
+function userQuotaView(channel = {}, bundle = {}) {
+  const allowedModels = allowedModelsForChannel(channel);
+  const allowedFamilies = new Set(allowedModels.map(modelFamily).filter(Boolean));
+  const targetWindows = new Set(channelTargetWindowIds(channel));
+  const sourceWindows = Array.isArray(bundle.account_windows?.windows) ? bundle.account_windows.windows : [];
+  const visibleWindows = sourceWindows
+    .filter(window => targetWindows.has(String(window.window_id || "")))
+    .map(window => ({
+      window_id: String(window.window_id || ""),
+      ready: Boolean(window.endpoint?.ready || window.credential_status?.bound),
+      quota_available: Boolean(window.credential_status?.quota_available),
+      reason: String(window.credential_status?.reason || ""),
+      models: Array.isArray(window.credential?.models) ? window.credential.models : []
+    }));
+
+  const modelQuotas = allowedModels.map(model => {
+    const windows = visibleWindows.map(window => {
+      const matched = bestQuotaModelForAllowed(model, window.models);
+      return {
+        window_id: window.window_id,
+        ready: window.ready,
+        quota_available: window.quota_available && Boolean(matched),
+        reason: matched ? window.reason : (window.reason || "这个窗口没有返回该模型对应额度。"),
+        source_model: matched?.id || "",
+        source_label: matched?.label || "",
+        match: matched?.match || "",
+        remaining_fraction: matched?.remaining_fraction ?? null,
+        percent: matched?.percent ?? null,
+        reset_time: matched?.reset_time || ""
+      };
+    });
+    const known = windows.map(item => item.remaining_fraction).filter(value => value !== null && value !== undefined);
+    const remaining = known.length ? Math.min(...known) : null;
+    return {
+      id: model,
+      family: modelFamily(model),
+      family_label: familyLabel(modelFamily(model)),
+      remaining_fraction: remaining,
+      percent: quotaPercent(remaining),
+      windows
+    };
+  });
+
+  return {
+    ok: true,
+    scope: "user",
+    generated_at: new Date().toISOString(),
+    allowed_models: allowedModels,
+    target_window_ids: Array.from(targetWindows),
+    model_quotas: modelQuotas,
+    token_estimate: compactTokenEstimate(bundle.token_estimate || {}, allowedFamilies),
+    source: {
+      quota_ok: Boolean(bundle.quota?.ok),
+      account_windows_ok: Boolean(bundle.account_windows?.ok),
+      token_estimate_ok: Boolean(bundle.token_estimate?.ok)
+    }
+  };
 }
 
 function messageText(messages) {
@@ -662,7 +945,7 @@ async function testAdminChannel(id, apiKey = "") {
         try { await response.body?.cancel(); } catch {}
       } else {
         const payload = await response.json();
-        const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(channel, item?.id)) : [];
+        const data = withModelAliases(Array.isArray(payload.data) ? payload.data : []).filter(item => modelAllowed(channel, item?.id));
         windowResult.ok = true;
         windowResult.model_count = data.length;
         result.model_count += data.length;
@@ -756,6 +1039,9 @@ async function handleAdmin(req, res, url) {
     const text = String(body.text || "");
     return sendJson(res, 200, { ok: true, estimate_tokens: estimateTokens(text), characters: text.length });
   }
+  if (pathname === "/api/admin/quota" && req.method === "GET") {
+    return sendJson(res, 200, adminQuotaView(await upstreamQuotaBundle()));
+  }
   if (pathname === "/api/admin/logs" && req.method === "GET") {
     const channelId = String(url.searchParams.get("channel_id") || "").trim();
     const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit") || 200)));
@@ -819,10 +1105,23 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
       logs
     });
   }
+  if (resource === "quota" && req.method === "GET") {
+    return sendJson(res, 200, userQuotaView(inspection.channel, await upstreamQuotaBundle()));
+  }
   if (resource === "token-estimate" && req.method === "POST") {
     const body = await readJsonBody(req);
     const text = String(body.text || "");
-    return sendJson(res, 200, { ok: true, estimate_tokens: estimateTokens(text), characters: text.length });
+    const inputTokens = estimateTokens(text);
+    const outputTokens = inspection.channel.max_output_tokens ?? null;
+    return sendJson(res, 200, {
+      ok: true,
+      estimate_tokens: inputTokens,
+      input_tokens: inputTokens,
+      max_output_tokens: outputTokens,
+      estimated_total_tokens: outputTokens === null ? inputTokens : inputTokens + outputTokens,
+      input_output_ratio: inputOutputRatio(inputTokens, outputTokens),
+      characters: text.length
+    });
   }
   return apiError(res, 405, "Method not allowed.", "method_not_allowed");
 }
@@ -838,7 +1137,8 @@ async function handleExternalModels(req, res, accessId) {
   try {
     const { response } = await upstreamFetchFromAllowedWindows(authorized.channel, "models");
     const payload = await response.json();
-    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(authorized.channel, item?.id)) : [];
+    const upstreamData = Array.isArray(payload.data) ? payload.data : [];
+    const data = withModelAliases(upstreamData).filter(item => modelAllowed(authorized.channel, item?.id));
     return sendJson(res, 200, { object: "list", data });
   } catch (error) {
     return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
@@ -867,16 +1167,18 @@ async function handleExternalChat(req, res, accessId) {
   } finally {
     releaseBodyRead();
   }
-  const model = String(body.model || "").trim();
+  const requestedModel = String(body.model || "").trim();
+  const model = resolveModelAlias(requestedModel);
   const inputText = messageText(body.messages);
   const inputTokens = estimateTokens(inputText);
-  if (!model || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
+  if (!requestedModel || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
 
-  if (!modelAllowed(provisional.channel, model)) {
-    store.recordRejected(accessId, { model, estimatedTokens: inputTokens, reason: "model_forbidden" });
+  if (!modelAllowed(provisional.channel, requestedModel)) {
+    store.recordRejected(accessId, { model: requestedModel, estimatedTokens: inputTokens, reason: "model_forbidden" });
     return apiError(res, 403, policyMessage("model_forbidden"), "model_forbidden");
   }
 
+  body.model = model;
   const maxOutputTokens = requestedOutputTokens(body, provisional.channel);
   if (maxOutputTokens !== null) body.max_tokens = maxOutputTokens;
   else delete body.max_tokens;
@@ -885,7 +1187,7 @@ async function handleExternalChat(req, res, accessId) {
   const reserved = store.checkAndReserve({
     id: accessId,
     apiKey: bearerToken(req),
-    model,
+    model: requestedModel,
     inputTokens,
     ...(maxOutputTokens !== null ? { maxOutputTokens } : {}),
     estimatedTokens: inputTokens + (maxOutputTokens ?? 0)
@@ -901,7 +1203,7 @@ async function handleExternalChat(req, res, accessId) {
     settled = true;
     store.settleReservation(reserved.reservationId, {
       inputTokens,
-      model,
+      model: requestedModel,
       latency_ms: Date.now() - startedAt,
       ...details
     });
@@ -975,7 +1277,7 @@ async function route(req, res) {
     return handleAdmin(req, res, url);
   }
 
-  const userPortal = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|token-estimate)$/);
+  const userPortal = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|quota|token-estimate)$/);
   if (userPortal) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
