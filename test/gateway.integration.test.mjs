@@ -96,7 +96,16 @@ test("gateway isolates upstream credentials and separates administrator and user
     seen.push({ path: req.url, auth: req.headers.authorization, body });
     if (req.headers.authorization !== `Bearer ${expectedUpstreamKey}`) return json(res, 401, { error: "bad upstream auth" });
     if (req.url === "/api/accounts") {
-      return json(res, 200, { antigravity: [{ name: "private-account", window_id: "w1", has_oauth_credentials: true, has_login_credentials: true }] });
+      return json(res, 200, {
+        antigravity: [
+          { name: "private-account", window_id: "w1", has_oauth_credentials: true, has_login_credentials: true },
+          { name: "backup-account", window_id: "w2", has_oauth_credentials: true, has_login_credentials: true },
+          { name: "not-authorized-for-tests", window_id: "w3", has_oauth_credentials: true, has_login_credentials: true }
+        ]
+      });
+    }
+    if (req.url === "/windows/w2/v1/models" || req.url === "/windows/w2/v1/chat/completions") {
+      return json(res, 503, { error: "w2 intentionally unavailable" });
     }
     if (req.url === "/v1/models" || req.url === "/windows/w1/v1/models") {
       return json(res, 200, { object: "list", data: [{ id: "claude-sonnet-4-6-thinking-ag", label: "Claude" }, { id: "gemini-3-5-flash-medium-ag", label: "Gemini" }] });
@@ -271,6 +280,46 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.deepEqual((await externalModels.json()).data.map(item => item.id), ["claude-sonnet-4-6-thinking-ag"]);
   assert.equal((await adminRequest(modelsPath, { headers: externalHeaders })).status, 404);
 
+  const w1ModelsSeenBeforeW2Only = seen.filter(entry => entry.path === "/windows/w1/v1/models").length;
+  const w2OnlyResponse = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "w2 only",
+      target_window_ids: ["w2"],
+      allowed_models: ["claude-sonnet-4-6-thinking-ag"]
+    })
+  });
+  assert.equal(w2OnlyResponse.status, 201);
+  const w2Only = await w2OnlyResponse.json();
+  assert.deepEqual(w2Only.channel.target_window_ids, ["w2"]);
+  const w2OnlyModels = await userRequest(pathFromPublicUrl(w2Only.channel.models_endpoint), {
+    headers: { authorization: `Bearer ${w2Only.api_key}` }
+  });
+  assert.notEqual(w2OnlyModels.status, 200);
+  assert.equal(seen.filter(entry => entry.path === "/windows/w1/v1/models").length, w1ModelsSeenBeforeW2Only);
+
+  const multiWindowResponse = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "w2 then w1",
+      target_window_ids: ["w2", "w1"],
+      allowed_models: ["claude-sonnet-4-6-thinking-ag"]
+    })
+  });
+  assert.equal(multiWindowResponse.status, 201);
+  const multiWindow = await multiWindowResponse.json();
+  assert.equal(multiWindow.channel.target_window_id, "w2");
+  assert.deepEqual(multiWindow.channel.target_window_ids, ["w2", "w1"]);
+  const multiWindowModels = await userRequest(pathFromPublicUrl(multiWindow.channel.models_endpoint), {
+    headers: { authorization: `Bearer ${multiWindow.api_key}` }
+  });
+  assert.equal(multiWindowModels.status, 200);
+  assert.ok(seen.some(entry => entry.path === "/windows/w2/v1/models"));
+  assert.ok(seen.some(entry => entry.path === "/windows/w1/v1/models"));
+  assert.equal(seen.some(entry => entry.path === "/windows/w3/v1/models"), false);
+
   const discoveryLimitedResponse = await adminRequest("/api/admin/channels", {
     method: "POST",
     headers: adminHeaders,
@@ -356,6 +405,7 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(userOverview.channel.status, "active");
   assert.ok(userOverview.usage.total_tokens > 0);
   assert.equal(JSON.stringify(userOverview).includes("target_window_id"), false);
+  assert.equal(JSON.stringify(userOverview).includes("target_window_ids"), false);
   assert.equal(JSON.stringify(userOverview).includes("private-account"), false);
   assert.equal(JSON.stringify(userOverview).includes(expectedUpstreamKey), false);
 

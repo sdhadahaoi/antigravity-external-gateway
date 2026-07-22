@@ -509,14 +509,70 @@ function userOverviewPayload(accessId, inspection) {
   };
 }
 
-async function validateChannelTarget(payload = {}) {
-  const target = String(payload.target_window_id || "").trim();
-  if (!target) throw Object.assign(new Error("Select an upstream account window."), { statusCode: 400 });
+function payloadTargetWindowIds(payload = {}) {
+  const source = Array.isArray(payload.target_window_ids)
+    ? payload.target_window_ids
+    : typeof payload.target_window_ids === "string"
+      ? payload.target_window_ids.split(/[\r\n,]+/)
+      : [payload.target_window_id];
+  const targets = [];
+  for (const candidate of source) {
+    const target = String(candidate || "").trim();
+    if (target && !targets.includes(target)) targets.push(target);
+  }
+  return targets;
+}
+
+async function validateChannelTargets(payload = {}) {
+  const targets = payloadTargetWindowIds(payload);
+  if (!targets.length) throw Object.assign(new Error("Select at least one upstream account window."), { statusCode: 400 });
   const accounts = await upstreamAccounts();
-  if (!accounts.some(item => item.window_id === target && (item.has_oauth_credentials || item.has_login_credentials))) {
+  const usable = new Set(accounts
+    .filter(item => item.has_oauth_credentials || item.has_login_credentials)
+    .map(item => item.window_id));
+  if (!targets.every(target => usable.has(target))) {
     throw Object.assign(new Error("The selected upstream account window is not available."), { statusCode: 400 });
   }
-  return target;
+  return targets;
+}
+
+function channelTargetWindowIds(channel = {}) {
+  const source = Array.isArray(channel.target_window_ids) ? channel.target_window_ids : [];
+  const targets = [];
+  for (const candidate of source) {
+    const target = String(candidate || "").trim();
+    if (target && !targets.includes(target)) targets.push(target);
+  }
+  const legacy = String(channel.target_window_id || "").trim();
+  if (!targets.length && legacy) targets.push(legacy);
+  return targets;
+}
+
+async function upstreamFetchFromAllowedWindows(channel, suffix, options = {}) {
+  const targets = channelTargetWindowIds(channel);
+  if (!targets.length) {
+    throw Object.assign(new Error("No target window is configured."), {
+      statusCode: 503,
+      publicMessage: "The model service is temporarily unavailable."
+    });
+  }
+  let sawClientRejection = false;
+  let lastError = null;
+  for (const target of targets) {
+    try {
+      const response = await upstreamFetch(upstreamWindowPath(target, suffix), options);
+      if (response.ok) return { response, windowId: target };
+      sawClientRejection = sawClientRejection || response.status < 500;
+      try { await response.body?.cancel(); } catch {}
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError && !sawClientRejection) throw lastError;
+  throw Object.assign(new Error("All selected upstream account windows are unavailable."), {
+    statusCode: sawClientRejection ? 400 : 502,
+    publicMessage: sawClientRejection ? "The model request was rejected." : "The model service is temporarily unavailable."
+  });
 }
 
 async function handleAdmin(req, res, url) {
@@ -543,7 +599,8 @@ async function handleAdmin(req, res, url) {
   }
   if (pathname === "/api/admin/channels" && req.method === "POST") {
     const body = await readJsonBody(req);
-    body.target_window_id = await validateChannelTarget(body);
+    body.target_window_ids = await validateChannelTargets(body);
+    body.target_window_id = body.target_window_ids[0];
     const created = store.create(body);
     return sendJson(res, 201, { ok: true, channel: channelView(created.channel, req), api_key: created.apiKey });
   }
@@ -568,7 +625,10 @@ async function handleAdmin(req, res, url) {
   }
   if (!action && req.method === "PATCH") {
     const body = await readJsonBody(req);
-    if (Object.prototype.hasOwnProperty.call(body, "target_window_id")) body.target_window_id = await validateChannelTarget(body);
+    if (Object.prototype.hasOwnProperty.call(body, "target_window_id") || Object.prototype.hasOwnProperty.call(body, "target_window_ids")) {
+      body.target_window_ids = await validateChannelTargets(body);
+      body.target_window_id = body.target_window_ids[0];
+    }
     const channel = store.update(id, body);
     if (!channel) return adminError(res, 404, "Channel not found.");
     return sendJson(res, 200, { ok: true, channel: channelView(channel, req) });
@@ -635,12 +695,7 @@ async function handleExternalModels(req, res, accessId) {
     });
   };
   try {
-    const response = await upstreamFetch(upstreamWindowPath(reserved.channel.target_window_id, "models"));
-    if (!response.ok) {
-      try { await response.body?.cancel(); } catch {}
-      settle("upstream_error");
-      return apiError(res, 502, "The model service is temporarily unavailable.", "upstream_unavailable");
-    }
+    const { response } = await upstreamFetchFromAllowedWindows(reserved.channel, "models");
     const payload = await response.json();
     const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(reserved.channel, item?.id)) : [];
     settle("ok");
@@ -713,16 +768,11 @@ async function handleExternalChat(req, res, accessId) {
   };
 
   try {
-    const upstream = await upstreamFetch(upstreamWindowPath(reserved.channel.target_window_id, "chat/completions"), {
+    const { response: upstream } = await upstreamFetchFromAllowedWindows(reserved.channel, "chat/completions", {
       method: "POST",
       body: JSON.stringify(body),
       accept: body.stream ? "text/event-stream" : "application/json"
     });
-    if (!upstream.ok) {
-      try { await upstream.body?.cancel(); } catch {}
-      settle({ outputTokens: 0, status: "upstream_error" });
-      return apiError(res, upstream.status >= 500 ? 502 : 400, upstream.status >= 500 ? "The model service is temporarily unavailable." : "The model request was rejected.", "upstream_error");
-    }
     if (body.stream) {
       const streamed = await pipeSse(res, upstream);
       settle({

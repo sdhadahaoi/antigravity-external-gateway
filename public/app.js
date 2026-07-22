@@ -320,18 +320,35 @@
     return pick(account, ["name", "label", "email", "window_id", "id"], "未知凭证窗口");
   }
 
-  function renderAccountOptions(select, selectedValue, disabledText) {
-    const selected = String(selectedValue || "");
+  function channelTargetWindows(channel) {
+    const raw = channelValue(channel, ["target_window_ids"], []);
+    const source = Array.isArray(raw)
+      ? raw
+      : typeof raw === "string"
+        ? raw.split(/[\r\n,]+/)
+        : [];
+    const values = source.map((item) => String(item || "").trim()).filter(Boolean);
+    const legacy = String(channelValue(channel, ["target_window_id", "account_id", "window_id"], "") || "").trim();
+    if (legacy && !values.includes(legacy)) values.unshift(legacy);
+    return values.filter((value, index) => values.indexOf(value) === index);
+  }
+
+  function selectedAccounts(container) {
+    return $$("input[name='target_window_ids']:checked", container).map((input) => input.value);
+  }
+
+  function renderAccountPicker(container, selectedValues, disabledText) {
+    const selected = new Set((selectedValues || []).map(String));
     const accounts = state.accounts || [];
     const options = accounts.map((account) => {
       const id = accountId(account);
       const active = account.active === false ? "（未激活）" : "";
-      return "<option value=\"" + html(id) + "\"" + (String(id) === selected ? " selected" : "") + ">" + html(accountName(account) + " [" + id + "]" + active) + "</option>";
+      return "<label class=\"model-choice\"><input type=\"checkbox\" name=\"target_window_ids\" value=\"" + html(id) + "\"" +
+        (selected.has(String(id)) ? " checked" : "") + "><span>" + html(accountName(account) + " [" + id + "]" + active) + "</span></label>";
     });
-    select.innerHTML = options.length
-      ? "<option value=\"\">选择指定凭证窗口</option>" + options.join("")
-      : "<option value=\"\">" + html(disabledText || "没有可用凭证窗口：请先连接上游 bridge") + "</option>";
-    select.disabled = !options.length;
+    container.innerHTML = options.length
+      ? options.join("")
+      : "<span class=\"placeholder\">" + html(disabledText || "没有可用凭证窗口：请先连接上游 bridge") + "</span>";
   }
 
   function selectedModels(container) {
@@ -352,9 +369,9 @@
   }
 
   function configureForms() {
-    renderAccountOptions(elements.createAccount, elements.createAccount.value, "没有可用凭证窗口");
+    renderAccountPicker(elements.createAccount, selectedAccounts(elements.createAccount), "没有可用凭证窗口");
     renderModelPicker(elements.createModels, selectedModels(elements.createModels));
-    renderAccountOptions(elements.editAccount, elements.editAccount.value, "没有可用凭证窗口");
+    renderAccountPicker(elements.editAccount, selectedAccounts(elements.editAccount), "没有可用凭证窗口");
     renderModelPicker(elements.editModels, selectedModels(elements.editModels));
   }
 
@@ -398,7 +415,7 @@
     const requestLimit = channelValue(channel, ["request_limit"], 0);
     const tokenPercent = usagePercent(usage.token, tokenLimit);
     const requestPercent = usagePercent(usage.request, requestLimit);
-    const account = channelValue(channel, ["target_window_id", "account_id", "window_id"], "未指定");
+    const accounts = channelTargetWindows(channel);
     const models = channelAllowedModels(channel);
     const endpoint = endpointFor(channel);
     const friendPortal = friendPortalFor(channel);
@@ -411,7 +428,7 @@
       "<div class=\"channel-identity\">" +
         "<div class=\"channel-title-row\"><h3 title=\"" + html(label) + "\">" + html(label) + "</h3>" +
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
-        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(account) + "</code></span><span>朋友短地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
+        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友短地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未限制") + "</span></div>" +
       "</div>" +
@@ -477,11 +494,13 @@
 
   function backupChannel(channel) {
     const savedKey = savedApiKeyFor(channel);
+    const targetWindows = channelTargetWindows(channel);
     const backup = {
       label: pick(channel, ["label", "name"], ""),
       access_slug: accessSlugFor(channel),
       api_key: savedKey || null,
-      target_window_id: channelValue(channel, ["target_window_id", "account_id", "window_id"], ""),
+      target_window_id: targetWindows[0] || "",
+      target_window_ids: targetWindows,
       allowed_models: channelAllowedModels(channel),
       starts_at: channelValue(channel, ["starts_at", "startsAt"], null),
       expires_at: channelValue(channel, ["expires_at", "expiresAt"], null),
@@ -570,21 +589,27 @@
     const label = String(friend.label || friend.name || "").trim();
     const accessSlug = accessSlugOrNull(friend.access_slug || friend.accessSlug);
     const apiKey = valueOrNull(friend.api_key || friend.apiKey);
-    const targetWindow = String(friend.target_window_id || friend.window_id || friend.account_id || "").trim();
+    const targetWindows = Array.isArray(friend.target_window_ids)
+      ? friend.target_window_ids.map((item) => String(item || "").trim()).filter(Boolean)
+      : String(friend.target_window_ids || friend.target_window_id || friend.window_id || friend.account_id || "")
+        .split(/[\r\n,]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
     const allowedModels = Array.isArray(friend.allowed_models)
       ? friend.allowed_models.map(String).filter(Boolean)
       : String(friend.allowed_models || friend.models || "").split(",").map((item) => item.trim()).filter(Boolean);
 
     if (!accessSlug) throw new Error("备份缺少用户地址标识。");
     if (!apiKey) throw new Error("备份缺少完整 API Key，不能原样恢复这个朋友。");
-    if (!targetWindow) throw new Error("备份缺少指定凭证窗口。");
+    if (!targetWindows.length) throw new Error("备份缺少指定凭证窗口。");
     if (!allowedModels.length) throw new Error("备份缺少允许模型。");
 
     const payload = {
       label: label || "朋友-" + accessSlug,
       access_slug: accessSlug,
       api_key: apiKey,
-      target_window_id: targetWindow,
+      target_window_id: targetWindows[0],
+      target_window_ids: targetWindows,
       allowed_models: allowedModels,
       starts_at: valueOrNull(friend.starts_at || friend.startsAt),
       expires_at: valueOrNull(friend.expires_at || friend.expiresAt),
@@ -762,9 +787,9 @@
     setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
     form.elements.enabled.checked = true;
 
-    if (elements.createAccount.options.length && !elements.createAccount.value) {
-      const firstAccount = Array.from(elements.createAccount.options).find((option) => option.value);
-      if (firstAccount) elements.createAccount.value = firstAccount.value;
+    const accountInputs = $$("input[name='target_window_ids']", elements.createAccount);
+    if (accountInputs.length && (!onlyEmpty || !selectedAccounts(elements.createAccount).length)) {
+      accountInputs.forEach((input, index) => { input.checked = index === 0; });
     }
     const modelInputs = $$("input[name='allowed_models']", elements.createModels);
     if (modelInputs.length && (!onlyEmpty || !selectedModels(elements.createModels).length)) {
@@ -794,16 +819,18 @@
   function collectPayload(form, modelContainer) {
     const values = new FormData(form);
     const allowedModels = selectedModels(modelContainer);
+    const accountContainer = form.id === "editChannelForm" ? elements.editAccount : elements.createAccount;
+    const targetWindows = selectedAccounts(accountContainer);
     const label = String(values.get("label") || "").trim();
-    const targetWindow = String(values.get("target_window_id") || "").trim();
     if (!label) throw new Error("请填写通道名称。");
-    if (!targetWindow) throw new Error("请选择指定凭证窗口。");
+    if (!targetWindows.length) throw new Error("请至少选择一个指定凭证窗口。");
     if (!allowedModels.length) throw new Error("请至少选择一个允许模型。");
 
     const payload = {
       label,
       access_slug: accessSlugOrNull(values.get("access_slug")),
-      target_window_id: targetWindow,
+      target_window_id: targetWindows[0],
+      target_window_ids: targetWindows,
       allowed_models: allowedModels,
       starts_at: valueOrNull(values.get("starts_at")),
       expires_at: valueOrNull(values.get("expires_at")),
@@ -905,7 +932,7 @@
     form.elements.id.value = id;
     form.elements.label.value = pick(channel, ["label", "name"], "");
     form.elements.access_slug.value = accessSlugFor(channel);
-    renderAccountOptions(elements.editAccount, channelValue(channel, ["target_window_id", "account_id", "window_id"], ""));
+    renderAccountPicker(elements.editAccount, channelTargetWindows(channel));
     renderModelPicker(elements.editModels, channelAllowedModels(channel));
     if (form.elements.token_limit) form.elements.token_limit.value = channelValue(channel, ["token_limit", "total_token_limit"], null) ?? "";
     if (form.elements.request_limit) form.elements.request_limit.value = channelValue(channel, ["request_limit"], null) ?? "";

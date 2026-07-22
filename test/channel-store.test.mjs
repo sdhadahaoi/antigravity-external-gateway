@@ -30,12 +30,14 @@ test('creates persistent credentials without persisting or exposing raw keys', (
   assert.match(created.channel.access_slug, /^u_[a-f0-9]{32}$/);
   assert.match(created.apiKey, /^agk_[A-Za-z0-9_-]+$/);
   assert.equal(created.channel.target_window_id, 'oauth-window-a');
+  assert.deepEqual(created.channel.target_window_ids, ['oauth-window-a']);
   assert.equal('apiKey' in created.channel, false);
   assert.equal('key_hash' in created.channel, false);
 
   const publicView = store.getPublic(created.channel.id, { now: '2030-01-01T12:00:00.000Z' });
   assert.equal(publicView.access_slug, created.channel.access_slug);
   assert.equal('target_window_id' in publicView, false);
+  assert.equal('target_window_ids' in publicView, false);
   assert.equal('usage' in publicView, false);
   assert.equal('key_hint' in publicView, false);
 
@@ -46,6 +48,28 @@ test('creates persistent credentials without persisting or exposing raw keys', (
   const reopened = new ChannelStore(path);
   assert.equal(reopened.authorize(created.channel.access_slug, created.apiKey, '2030-01-01T12:00:00.000Z').ok, true);
   assert.equal(reopened.authorize(created.channel.id, 'wrong-key', '2030-01-01T12:00:00.000Z').reason, 'invalid_api_key');
+});
+
+test('supports multiple administrator-selected credential windows', (t) => {
+  const { path, store } = makeStore(t);
+  const created = store.create({
+    label: 'Multi window friend',
+    target_window_ids: ['w1', 'w2', 'w3', 'w2'],
+  });
+
+  assert.equal(created.channel.target_window_id, 'w1');
+  assert.deepEqual(created.channel.target_window_ids, ['w1', 'w2', 'w3']);
+
+  const updated = store.update(created.channel.id, { target_window_ids: 'w3,w4\nw3' });
+  assert.equal(updated.target_window_id, 'w3');
+  assert.deepEqual(updated.target_window_ids, ['w3', 'w4']);
+
+  const legacyUpdated = store.update(created.channel.id, { target_window_id: 'legacy-w5' });
+  assert.equal(legacyUpdated.target_window_id, 'legacy-w5');
+  assert.deepEqual(legacyUpdated.target_window_ids, ['legacy-w5']);
+
+  const reopened = new ChannelStore(path);
+  assert.deepEqual(reopened.getAdmin(created.channel.id).target_window_ids, ['legacy-w5']);
 });
 
 test('accepts administrator-provided random API keys without persisting raw keys', (t) => {

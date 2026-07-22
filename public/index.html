@@ -102,13 +102,13 @@
               </div>
               <small>仅使用小写字母、数字、连字符或下划线；服务端会检查唯一性。</small>
             </div>
-            <label>
-              指定凭证窗口
-              <select name="target_window_id" id="createAccount" required disabled>
-                <option value="">先连接管理端</option>
-              </select>
-              <small>本地为空时，请先用上游 bridge 环境变量启动；Render 上请在 Environment 设置 UPSTREAM_BRIDGE_URL 和 UPSTREAM_BRIDGE_API_KEY。</small>
-            </label>
+            <fieldset class="model-fieldset">
+              <legend>指定凭证窗口（可多选）</legend>
+              <div class="model-picker" id="createAccount">
+                <span class="placeholder">先连接管理端</span>
+              </div>
+              <small>朋友只能使用这里勾选的窗口；如果这些窗口都不可用，不会自动切到其他凭证。</small>
+            </fieldset>
             <fieldset class="model-fieldset">
               <legend>允许模型</legend>
               <div class="model-picker" id="createModels">
@@ -277,10 +277,11 @@
             </div>
             <small>留空后由服务端生成新的随机地址；修改后旧的用户地址将失效。</small>
           </div>
-          <label>
-            指定凭证窗口
-            <select name="target_window_id" id="editAccount" required></select>
-          </label>
+          <fieldset class="model-fieldset">
+            <legend>指定凭证窗口（可多选）</legend>
+            <div class="model-picker" id="editAccount"></div>
+            <small>朋友只能使用这里勾选的窗口；可以同时允许 w1 / w2 / w3 / 更多窗口。</small>
+          </fieldset>
           <fieldset class="model-fieldset">
             <legend>允许模型</legend>
             <div class="model-picker" id="editModels"></div>
