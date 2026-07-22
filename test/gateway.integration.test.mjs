@@ -349,7 +349,33 @@ test("gateway isolates upstream credentials and separates administrator and user
   const discoveryHeaders = { authorization: `Bearer ${discoveryLimited.api_key}` };
   const discoveryModelsPath = pathFromPublicUrl(discoveryLimited.channel.models_endpoint);
   assert.equal((await userRequest(discoveryModelsPath, { headers: discoveryHeaders })).status, 200);
-  assert.equal((await userRequest(discoveryModelsPath, { headers: discoveryHeaders })).status, 429);
+  assert.equal((await userRequest(discoveryModelsPath, { headers: discoveryHeaders })).status, 200);
+  const discoveryLogs = await (await adminRequest(`/api/admin/logs?channel_id=${encodeURIComponent(discoveryLimited.channel.id)}`, { headers: adminHeaders })).json();
+  assert.equal(discoveryLogs.logs.length, 0);
+
+  const unlimitedOutputResponse = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "no forced output cap",
+      target_window_id: "w1",
+      allowed_models: ["claude-sonnet-4-6-thinking-ag"]
+    })
+  });
+  assert.equal(unlimitedOutputResponse.status, 201);
+  const unlimitedOutput = await unlimitedOutputResponse.json();
+  const unlimitedChat = await userRequest(pathFromPublicUrl(unlimitedOutput.channel.chat_endpoint), {
+    method: "POST",
+    headers: { authorization: `Bearer ${unlimitedOutput.api_key}` },
+    body: JSON.stringify({ model: "claude-sonnet-4-6-thinking-ag", messages: [{ role: "user", content: "no forced max token limit" }] })
+  });
+  assert.equal(unlimitedChat.status, 200);
+  const unlimitedUpstreamRequest = seen
+    .filter(entry => entry.path === "/windows/w1/v1/chat/completions")
+    .map(entry => JSON.parse(entry.body || "{}"))
+    .find(entry => entry.messages?.some(message => message?.content === "no forced max token limit"));
+  assert.ok(unlimitedUpstreamRequest);
+  assert.equal(Object.hasOwn(unlimitedUpstreamRequest, "max_tokens"), false);
 
   const completion = await userRequest(chatPath, {
     method: "POST",
@@ -440,8 +466,12 @@ test("gateway isolates upstream credentials and separates administrator and user
   const logs = await (await adminRequest(`/api/admin/logs?channel_id=${encodeURIComponent(created.channel.id)}`, { headers: adminHeaders })).json();
   assert.ok(logs.logs.some(entry => entry.event === "settled" && entry.status === "ok"));
   assert.ok(logs.logs.some(entry => entry.event === "rejected" && entry.reason === "model_forbidden"));
+  assert.equal(logs.logs.some(entry => entry.event === "reserved"), false);
+  assert.equal(logs.logs.some(entry => entry.model === "models"), false);
   const userLogs = await (await userRequest(`/u/${encodeURIComponent(created.channel.access_slug)}/user/logs?limit=20`, { headers: externalHeaders })).json();
   assert.ok(userLogs.logs.length > 0);
+  assert.equal(userLogs.logs.some(entry => entry.event === "reserved"), false);
+  assert.equal(userLogs.logs.some(entry => entry.model === "models"), false);
   assert.equal(JSON.stringify(userLogs).includes("channel_id"), false);
   assert.equal((await userRequest(userOverviewPath, { headers: { authorization: "Bearer invalid" } })).status, 401);
 
