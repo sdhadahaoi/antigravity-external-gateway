@@ -970,6 +970,18 @@
     openModal(elements.keyModal);
   }
 
+  function friendShareText(channel, apiKey) {
+    const portal = friendPortalFor(channel || {});
+    const endpoint = endpointFor(channel || {});
+    const login = appendAccessKeyToUrl(portal, apiKey);
+    return [
+      "朋友用户页: " + portal,
+      "朋友 API 地址: " + endpoint,
+      "朋友 API Key: " + String(apiKey || "").trim(),
+      "一键登录链接: " + login
+    ].join("\n");
+  }
+
   async function copyText(value, successMessage) {
     if (!value) {
       showToast("没有可复制的内容。", "error");
@@ -1370,6 +1382,14 @@
       elements.estimateCharacters.textContent = elements.estimateText.value.length + " 个字符";
     });
     $("#copyRawApiKey").addEventListener("click", () => copyText(elements.rawApiKey.textContent, "已复制 API Key。"));
+    const copyFriendOneClick = $("#copyFriendOneClick");
+    if (copyFriendOneClick) copyFriendOneClick.addEventListener("click", () => {
+      if (!state.modalChannel || !elements.rawApiKey.textContent) {
+        showToast("没有可复制的朋友信息。", "error");
+        return;
+      }
+      copyText(friendShareText(state.modalChannel, elements.rawApiKey.textContent), "已复制朋友一键分享内容。");
+    });
     $("#copyModalFriendBackup").addEventListener("click", () => {
       if (!state.modalChannel) {
         showToast("没有可复制的朋友配置。", "error");
