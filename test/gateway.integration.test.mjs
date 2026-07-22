@@ -688,6 +688,18 @@ test("gateway exposes configured model aliases and rewrites chat requests upstre
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
       });
     }
+    if (req.url === "/windows/w1/v1/messages") {
+      const requestBody = JSON.parse(body || "{}");
+      return json(res, 200, {
+        id: "msg_alias",
+        type: "message",
+        role: "assistant",
+        model: requestBody.model,
+        content: [{ type: "text", text: "anthropic alias answer" }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 0, output_tokens: 0 }
+      });
+    }
     return json(res, 404, { error: "unexpected" });
   });
   const upstreamPort = await listen(upstream);
@@ -747,4 +759,22 @@ test("gateway exposes configured model aliases and rewrites chat requests upstre
     .map(entry => JSON.parse(entry.body || "{}"))
     .at(-1);
   assert.equal(upstreamChat.model, "claude-sonnet-4-6-thinking-ag");
+
+  const anthropic = await rawHttpRequest(origin, `${basePath}/messages`, {
+    method: "POST",
+    headers: { "x-api-key": created.api_key, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "sonnet",
+      max_tokens: 64,
+      messages: [{ role: "user", content: [{ type: "text", text: "hello anthropic alias" }] }]
+    })
+  });
+  assert.equal(anthropic.status, 200);
+  const anthropicPayload = await anthropic.json();
+  assert.equal(anthropicPayload.content[0].text, "anthropic alias answer");
+  const upstreamAnthropic = seen
+    .filter(entry => entry.path === "/windows/w1/v1/messages")
+    .map(entry => JSON.parse(entry.body || "{}"))
+    .at(-1);
+  assert.equal(upstreamAnthropic.model, "claude-sonnet-4-6-thinking-ag");
 });

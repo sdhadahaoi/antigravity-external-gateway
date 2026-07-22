@@ -42,7 +42,8 @@ function safeEqual(left, right) {
 
 function bearerToken(req) {
   const raw = String(req.headers.authorization || "").trim();
-  return raw.replace(/^Bearer\s+/i, "").trim();
+  const bearer = raw.replace(/^Bearer\s+/i, "").trim();
+  return bearer || String(req.headers["x-api-key"] || req.headers["api-key"] || "").trim();
 }
 
 function adminAuthorized(req) {
@@ -685,6 +686,31 @@ function messageText(messages) {
   }).join("\n");
 }
 
+function anthropicBlockText(block) {
+  if (!block || typeof block !== "object") return "";
+  if (typeof block.text === "string") return block.text;
+  if (typeof block.content === "string") return block.content;
+  if (Array.isArray(block.content)) return block.content.map(anthropicBlockText).filter(Boolean).join("\n");
+  return "";
+}
+
+function anthropicContentText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map(anthropicBlockText).filter(Boolean).join("\n");
+}
+
+function anthropicRequestText(body = {}) {
+  const parts = [];
+  const system = anthropicContentText(body.system);
+  if (system) parts.push(system);
+  for (const message of Array.isArray(body.messages) ? body.messages : []) {
+    const text = anthropicContentText(message?.content);
+    if (text) parts.push(text);
+  }
+  return parts.join("\n");
+}
+
 function requestedOutputTokens(body, channel) {
   const supplied = body.max_tokens ?? body.max_completion_tokens ?? body.maxOutputTokens;
   const requested = Number(supplied);
@@ -704,6 +730,10 @@ function outputTextFromCompletion(payload = {}) {
     const value = choice?.message?.content ?? choice?.text ?? "";
     return Array.isArray(value) ? value.map(part => part?.text || part?.content || "").join("") : String(value || "");
   }).join("");
+}
+
+function outputTextFromAnthropicMessage(payload = {}) {
+  return anthropicContentText(payload.content);
 }
 
 function createSseCollector() {
@@ -851,6 +881,66 @@ async function pipeSse(res, upstreamResponse) {
   return { output_text: collector.finish(), client_closed: closed, upstream_error: upstreamError };
 }
 
+async function pipeAnthropicSse(res, upstreamResponse) {
+  const decoder = new TextDecoder();
+  let buffered = "";
+  let output = "";
+  let closed = false;
+  res.once("close", () => { closed = true; });
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-store",
+    "connection": "keep-alive",
+    "x-accel-buffering": "no",
+    "x-content-type-options": "nosniff"
+  });
+
+  const collectEvent = event => {
+    const data = event
+      .split(/\r?\n/)
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trimStart())
+      .join("\n")
+      .trim();
+    if (!data) return;
+    try {
+      const payload = JSON.parse(data);
+      if (payload?.type === "content_block_delta" && payload?.delta?.type === "text_delta") {
+        output += String(payload.delta.text || "");
+      }
+    } catch {}
+  };
+  const drainEvents = flush => {
+    let separator = /\r?\n\r?\n/.exec(buffered);
+    while (separator) {
+      const event = buffered.slice(0, separator.index);
+      buffered = buffered.slice(separator.index + separator[0].length);
+      collectEvent(event);
+      separator = /\r?\n\r?\n/.exec(buffered);
+    }
+    if (flush && buffered.trim()) {
+      collectEvent(buffered);
+      buffered = "";
+    }
+  };
+
+  for await (const chunk of Readable.fromWeb(upstreamResponse.body)) {
+    const text = decoder.decode(chunk, { stream: true });
+    buffered += text;
+    drainEvents(false);
+    if (!closed && !res.destroyed && !res.writableEnded && !res.write(text)) await waitForDrain(res);
+    if (closed || res.destroyed) break;
+  }
+  const tail = decoder.decode();
+  if (tail) {
+    buffered += tail;
+    if (!closed && !res.destroyed && !res.writableEnded && !res.write(tail)) await waitForDrain(res);
+  }
+  drainEvents(true);
+  if (!res.writableEnded && !res.destroyed) res.end();
+  return { output_text: output, client_closed: closed, upstream_error: false };
+}
+
 function policyStatus(reason = "") {
   if (/rate|concurr|token|request|limit/i.test(reason)) return 429;
   if (/expired|not.?started|disabled|model/i.test(reason)) return 403;
@@ -993,6 +1083,17 @@ async function handleOwnerOpenAiPassthrough(req, res, url) {
     });
     return sendUpstreamResponse(res, upstream);
   }
+  if (url.pathname === "/v1/messages" && req.method === "POST") {
+    const body = await readBody(req);
+    const contentType = String(req.headers["content-type"] || "");
+    const upstream = await upstreamFetch("/v1/messages", {
+      method: "POST",
+      body,
+      accept: String(req.headers.accept || "").includes("text/event-stream") ? "text/event-stream" : "application/json",
+      contentType: contentType || "application/json"
+    });
+    return sendUpstreamResponse(res, upstream);
+  }
   return apiError(res, 404, "Not found.", "not_found");
 }
 
@@ -1102,7 +1203,7 @@ async function upstreamFetchFromAllowedWindows(channel, suffix, options = {}) {
   let lastError = null;
   let sawWindowConcurrencyLimit = false;
   for (const target of targets) {
-    const releaseWindowConcurrency = suffix === "chat/completions"
+    const releaseWindowConcurrency = (suffix === "chat/completions" || suffix === "messages")
       ? reserveWindowConcurrency(channel, target)
       : () => {};
     if (!releaseWindowConcurrency) {
@@ -1388,6 +1489,111 @@ async function handleExternalChat(req, res, accessId) {
   }
 }
 
+async function handleExternalMessages(req, res, accessId) {
+  const provisional = store.authorize(accessId, bearerToken(req));
+  if (!provisional?.ok) {
+    req.resume();
+    return apiError(res, policyStatus(provisional?.reason), policyMessage(provisional?.reason), externalPolicyCode(provisional?.reason));
+  }
+
+  let body;
+  const releaseBodyRead = reserveBodyRead(provisional.channel);
+  if (!releaseBodyRead) {
+    req.resume();
+    return apiError(res, 429, policyMessage("concurrency_limit_exceeded"), "concurrency_limit_exceeded");
+  }
+  try {
+    body = await readJsonBody(req);
+  } catch (error) {
+    return apiError(res, error.statusCode || 400, error.message || "Invalid request.", "invalid_request");
+  } finally {
+    releaseBodyRead();
+  }
+
+  const requestedModel = String(body.model || "").trim();
+  const model = resolveModelAlias(requestedModel);
+  const inputText = anthropicRequestText(body);
+  const inputTokens = estimateTokens(inputText);
+  if (!requestedModel || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
+
+  if (!modelAllowed(provisional.channel, requestedModel)) {
+    store.recordRejected(accessId, { model: requestedModel, estimatedTokens: inputTokens, reason: "model_forbidden" });
+    return apiError(res, 403, policyMessage("model_forbidden"), "model_forbidden");
+  }
+
+  body.model = model;
+  const maxOutputTokens = requestedOutputTokens(body, provisional.channel);
+  if (maxOutputTokens !== null) body.max_tokens = maxOutputTokens;
+  delete body.max_completion_tokens;
+  delete body.maxOutputTokens;
+
+  const reserved = store.checkAndReserve({
+    id: accessId,
+    apiKey: bearerToken(req),
+    model: requestedModel,
+    inputTokens,
+    ...(maxOutputTokens !== null ? { maxOutputTokens } : {}),
+    estimatedTokens: inputTokens + (maxOutputTokens ?? 0)
+  });
+  if (!reserved?.ok) {
+    return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), externalPolicyCode(reserved?.reason));
+  }
+
+  const startedAt = Date.now();
+  let settled = false;
+  const settle = details => {
+    if (settled) return;
+    settled = true;
+    store.settleReservation(reserved.reservationId, {
+      inputTokens,
+      model: requestedModel,
+      latency_ms: Date.now() - startedAt,
+      ...details
+    });
+  };
+
+  let releaseWindowConcurrency = () => {};
+  try {
+    const upstreamResult = await upstreamFetchFromAllowedWindows(reserved.channel, "messages", {
+      method: "POST",
+      body: JSON.stringify(body),
+      accept: body.stream ? "text/event-stream" : "application/json"
+    });
+    const upstream = upstreamResult.response;
+    releaseWindowConcurrency = upstreamResult.releaseWindowConcurrency || releaseWindowConcurrency;
+    if (body.stream) {
+      const streamed = await pipeAnthropicSse(res, upstream);
+      settle({
+        outputTokens: estimateTokens(streamed.output_text),
+        status: streamed.client_closed ? "client_closed" : streamed.upstream_error ? "upstream_error" : "ok"
+      });
+      return;
+    }
+    const raw = Buffer.from(await upstream.arrayBuffer());
+    let payload;
+    try {
+      payload = JSON.parse(raw.toString("utf8"));
+    } catch {
+      settle({ outputTokens: 0, status: "upstream_error" });
+      return apiError(res, 502, "The model service returned an invalid response.", "upstream_error");
+    }
+    const outputTokens = estimateTokens(outputTextFromAnthropicMessage(payload));
+    payload.usage = {
+      ...(payload.usage || {}),
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated: true
+    };
+    settle({ outputTokens, status: "ok" });
+    return sendJson(res, 200, payload);
+  } catch (error) {
+    settle({ outputTokens: 0, status: "upstream_error" });
+    return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
+  } finally {
+    releaseWindowConcurrency();
+  }
+}
+
 function staticFile(res, filename, contentType) {
   const filePath = path.join(PUBLIC_DIR, filename);
   try {
@@ -1404,12 +1610,18 @@ async function route(req, res) {
   // Render health checks are allowed on either custom domain and the service
   // hostname. Every other endpoint is limited to its configured surface.
   if (url.pathname === "/health") return sendJson(res, 200, { ok: true, service: "antigravity-external-gateway" });
-  if (url.pathname === "/v1/models" || url.pathname === "/v1/chat/completions") {
+  if (url.pathname === "/v1/models" || url.pathname === "/v1/chat/completions" || url.pathname === "/v1/messages") {
     return handleOwnerOpenAiPassthrough(req, res, url);
   }
   if (surface === "unknown") return sendJson(res, 404, { ok: false, message: "Not found." });
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { allow: "GET,POST,PATCH,DELETE,OPTIONS", "cache-control": "no-store" });
+    res.writeHead(204, {
+      allow: "GET,POST,PATCH,DELETE,OPTIONS",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+      "access-control-allow-headers": "authorization,x-api-key,api-key,anthropic-version,anthropic-beta,content-type",
+      "cache-control": "no-store"
+    });
     return res.end();
   }
 
@@ -1423,11 +1635,12 @@ async function route(req, res) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
   }
-  const access = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|chat\/completions)$/);
+  const access = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|messages|chat\/completions)$/);
   if (access) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     if (access[2] === "models" && req.method === "GET") return handleExternalModels(req, res, access[1]);
     if (access[2] === "chat/completions" && req.method === "POST") return handleExternalChat(req, res, access[1]);
+    if (access[2] === "messages" && req.method === "POST") return handleExternalMessages(req, res, access[1]);
     return apiError(res, 405, "Method not allowed.", "method_not_allowed");
   }
 
