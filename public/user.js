@@ -9,6 +9,8 @@
     available: false,
     lastTest: null,
     connecting: false,
+    numberUnit: storedNumberUnit(),
+    quotaPayload: null,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -32,6 +34,7 @@
     maxOutputTokens: $("maxOutputTokens"),
     allowedModelSummary: $("allowedModelSummary"),
     allowedModels: $("allowedModels"),
+    numberUnit: $("numberUnit"),
     refreshQuota: $("refreshQuota"),
     oauthQuotaResult: $("oauthQuotaResult"),
     modelSelect: $("modelSelect"),
@@ -56,6 +59,20 @@
     } catch (_) {
       return "";
     }
+  }
+
+  function storedNumberUnit() {
+    try {
+      return localStorage.getItem("ag_external_gateway_number_unit") || "raw";
+    } catch (_) {
+      return "raw";
+    }
+  }
+
+  function setStoredNumberUnit(value) {
+    try {
+      localStorage.setItem("ag_external_gateway_number_unit", value || "raw");
+    } catch (_) {}
   }
 
   function urlKey() {
@@ -103,6 +120,22 @@
   function formatNumber(value) {
     const number = Number(value);
     return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(Number.isFinite(number) ? number : 0);
+  }
+
+  function formatScaledNumber(value) {
+    const numeric = number(value);
+    const unit = state.numberUnit || "raw";
+    const units = {
+      raw: { divisor: 1, suffix: "" },
+      k: { divisor: 1000, suffix: "K" },
+      w: { divisor: 10000, suffix: "W" },
+      m: { divisor: 1000000, suffix: "M" },
+    };
+    const meta = units[unit] || units.raw;
+    if (meta.divisor === 1) return formatNumber(numeric);
+    const scaled = numeric / meta.divisor;
+    const maximumFractionDigits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits }).format(scaled) + meta.suffix;
   }
 
   function isSet(value) {
@@ -201,8 +234,9 @@
     const limitNumber = Math.max(0, number(limit));
     const percent = hasLimit && limitNumber > 0 ? Math.min(100, Math.round((usedNumber / limitNumber) * 100)) : 0;
 
-    value.textContent = formatNumber(usedNumber) + " / " + (hasLimit ? formatNumber(limitNumber) : "不限");
-    note.textContent = hasLimit ? "剩余 " + formatNumber(Math.max(0, number(remaining))) : "未设置上限";
+    const displayNumber = prefix === "token" ? formatScaledNumber : formatNumber;
+    value.textContent = displayNumber(usedNumber) + " / " + (hasLimit ? displayNumber(limitNumber) : "不限");
+    note.textContent = hasLimit ? "剩余 " + displayNumber(Math.max(0, number(remaining))) : "未设置上限";
     meter.max = 100;
     meter.value = percent;
     meter.className = hasLimit ? (percent >= 90 ? "danger" : percent >= 70 ? "warn" : "") : "unlimited";
@@ -249,7 +283,7 @@
     elements.channelStatus.textContent = meta.label;
     elements.channelStatus.className = "status-pill " + meta.className;
     elements.expiryText.textContent = channel.expires_at ? "有效至 " + formatDate(channel.expires_at) : "未设置结束时间";
-    elements.maxOutputTokens.textContent = isSet(channel.max_output_tokens) ? formatNumber(channel.max_output_tokens) + " Token" : "按服务默认值";
+    elements.maxOutputTokens.textContent = isSet(channel.max_output_tokens) ? formatScaledNumber(channel.max_output_tokens) + " Token" : "按服务默认值";
 
     quota("token", usage.total_tokens, channel.token_limit, remaining.tokens);
     quota("request", usage.total_requests, channel.request_limit, remaining.requests);
@@ -316,7 +350,7 @@
   }
 
   function tokenText(value) {
-    return isSet(value) && Number.isFinite(Number(value)) ? formatNumber(value) + " Token" : "--";
+    return isSet(value) && Number.isFinite(Number(value)) ? formatScaledNumber(value) + " Token" : "--";
   }
 
   function appendText(parent, tag, text, className) {
@@ -329,6 +363,7 @@
 
   function renderQuota(payload) {
     if (!elements.oauthQuotaResult) return;
+    state.quotaPayload = payload;
     elements.oauthQuotaResult.replaceChildren();
     const models = Array.isArray(payload && payload.model_quotas) ? payload.model_quotas : [];
     const families = Array.isArray(payload && payload.token_estimate && payload.token_estimate.families) ? payload.token_estimate.families : [];
@@ -406,11 +441,11 @@
 
   function logTokenText(entry) {
     const total = entry.total_tokens;
-    if (isSet(total)) return formatNumber(total);
-    if (isSet(entry.estimated_tokens)) return "约 " + formatNumber(entry.estimated_tokens);
+    if (isSet(total)) return formatScaledNumber(total);
+    if (isSet(entry.estimated_tokens)) return "约 " + formatScaledNumber(entry.estimated_tokens);
     const input = number(entry.input_tokens);
     const output = number(entry.output_tokens);
-    return input || output ? formatNumber(input + output) : "-";
+    return input || output ? formatScaledNumber(input + output) : "-";
   }
 
   function tableCell(text, className) {
@@ -590,10 +625,10 @@
         method: "POST",
         body: JSON.stringify({ text }),
       });
-      const output = isSet(payload.max_output_tokens) ? formatNumber(payload.max_output_tokens) + " Token" : "未设置输出上限";
-      elements.estimateResult.textContent = "输入约 " + formatNumber(payload.input_tokens || payload.estimate_tokens) +
+      const output = isSet(payload.max_output_tokens) ? formatScaledNumber(payload.max_output_tokens) + " Token" : "未设置输出上限";
+      elements.estimateResult.textContent = "输入约 " + formatScaledNumber(payload.input_tokens || payload.estimate_tokens) +
         " Token；最大输出 " + output +
-        "；预估总量 " + formatNumber(payload.estimated_total_tokens || payload.estimate_tokens) +
+        "；预估总量 " + formatScaledNumber(payload.estimated_total_tokens || payload.estimate_tokens) +
         " Token；输入/输出比 " + (payload.input_output_ratio || "--");
     } catch (error) {
       elements.estimateResult.textContent = error.message || "暂时无法计算";
@@ -633,6 +668,20 @@
   elements.estimateButton.addEventListener("click", () => { void estimateTokens(); });
   elements.sendTest.addEventListener("click", () => { void invokeTest(false); });
   elements.retryTest.addEventListener("click", () => { void invokeTest(true); });
+  if (elements.numberUnit) {
+    elements.numberUnit.value = state.numberUnit;
+    elements.numberUnit.addEventListener("change", () => {
+      state.numberUnit = elements.numberUnit.value || "raw";
+      setStoredNumberUnit(state.numberUnit);
+      if (state.overview) renderOverview(state.overview);
+      if (state.quotaPayload) renderQuota(state.quotaPayload);
+      void loadLogs();
+    });
+  }
+
+  try {
+    sessionStorage.removeItem("ag_external_gateway_admin_key");
+  } catch (_) {}
 
   if (!accessSlug) {
     elements.connectButton.disabled = true;
