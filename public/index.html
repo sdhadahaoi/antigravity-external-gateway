@@ -225,6 +225,17 @@
           </div>
           <div id="estimateResult" class="estimate-result" aria-live="polite">尚未计算</div>
         </section>
+
+        <section class="panel oauth-quota-panel" aria-labelledby="adminQuotaTitle">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="eyebrow">OAUTH QUOTA</p>
+              <h2 id="adminQuotaTitle">OAuth 额度总览</h2>
+            </div>
+            <button class="button button-quiet" id="refreshAdminQuota" type="button">刷新额度</button>
+          </div>
+          <div class="quota-result" id="adminQuotaResult">连接管理端后查看全部模型额度与 Token 预估。</div>
+        </section>
       </div>
     </main>
 
