@@ -278,7 +278,8 @@ async function upstreamModels() {
 function modelAllowed(channel, model) {
   const allowed = Array.isArray(channel.allowed_models) ? channel.allowed_models.map(item => String(item).trim()).filter(Boolean) : [];
   const requested = String(model || "");
-  return !allowed.length || allowed.some(item => item === "*" || item === requested || (item.endsWith("*") && requested.startsWith(item.slice(0, -1))));
+  return allowed.length > 0
+    && allowed.some(item => item === "*" || item === requested || (item.endsWith("*") && requested.startsWith(item.slice(0, -1))));
 }
 
 function messageText(messages) {
@@ -610,6 +611,16 @@ async function validateChannelTargets(payload = {}) {
   return targets;
 }
 
+function payloadAllowedModels(payload = {}) {
+  const value = payload.allowed_models;
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\r\n,]+/)
+      : [];
+  return source.map(item => String(item || "").trim()).filter(Boolean);
+}
+
 async function testAdminChannel(id, apiKey = "") {
   const channel = store.getAdmin(id);
   if (!channel) return null;
@@ -732,6 +743,9 @@ async function handleAdmin(req, res, url) {
   }
   if (pathname === "/api/admin/channels" && req.method === "POST") {
     const body = await readJsonBody(req);
+    if (!payloadAllowedModels(body).length) {
+      return adminError(res, 400, "Select at least one allowed model.");
+    }
     body.target_window_ids = await validateChannelTargets(body);
     body.target_window_id = body.target_window_ids[0];
     const created = store.create(body);
@@ -767,6 +781,9 @@ async function handleAdmin(req, res, url) {
   }
   if (!action && req.method === "PATCH") {
     const body = await readJsonBody(req);
+    if (Object.prototype.hasOwnProperty.call(body, "allowed_models") && !payloadAllowedModels(body).length) {
+      return adminError(res, 400, "Select at least one allowed model.");
+    }
     if (Object.prototype.hasOwnProperty.call(body, "target_window_id") || Object.prototype.hasOwnProperty.call(body, "target_window_ids")) {
       body.target_window_ids = await validateChannelTargets(body);
       body.target_window_id = body.target_window_ids[0];
