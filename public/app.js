@@ -342,9 +342,12 @@
     const accounts = state.accounts || [];
     const options = accounts.map((account) => {
       const id = accountId(account);
-      const active = account.active === false ? "（未激活）" : "";
+      const ready = account.ready !== undefined
+        ? Boolean(account.ready)
+        : Boolean(account.has_oauth_credentials || account.has_login_credentials);
+      const status = ready ? "（已绑定）" : "（未绑定凭证）";
       return "<label class=\"model-choice\"><input type=\"checkbox\" name=\"target_window_ids\" value=\"" + html(id) + "\"" +
-        (selected.has(String(id)) ? " checked" : "") + "><span>" + html(accountName(account) + " [" + id + "]" + active) + "</span></label>";
+        (selected.has(String(id)) ? " checked" : "") + "><span>" + html(accountName(account) + " [" + id + "]" + status) + "</span></label>";
     });
     container.innerHTML = options.length
       ? options.join("")
@@ -445,6 +448,7 @@
       "</div>" +
       "<div class=\"channel-actions\">" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
+        "<button class=\"button button-quiet\" type=\"button\" data-action=\"test-api\">测试 API</button>" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"edit\">编辑</button>" +
         "<button class=\"button " + (enabled ? "button-warning\" data-action=\"toggle\">停用" : "button-quiet\" data-action=\"toggle\">启用") + "</button>" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"rotate\">轮换 Key</button>" +
@@ -984,6 +988,28 @@
     }
   }
 
+  async function testChannelApi(channel) {
+    const id = pick(channel, ["id", "public_id", "channel_id"], "");
+    const apiKey = savedApiKeyFor(channel);
+    if (!apiKey) {
+      showToast("当前浏览器没有保存这个朋友的完整 API Key；请先导入备份或轮换 Key。", "error");
+      return;
+    }
+    try {
+      const result = await api("/api/admin/channels/" + encodeURIComponent(id) + "/test", {
+        method: "POST",
+        body: JSON.stringify({ api_key: apiKey }),
+      });
+      const test = result.test || {};
+      const windows = (test.windows || []).map((item) => (
+        item.window_id + ": " + (item.ok ? "可用" : "不可用") + "，模型 " + (item.model_count || 0) + "，" + (item.message || "")
+      )).join("\n");
+      window.alert((test.ok ? "测试通过\n" : "测试未通过\n") + (test.message || "") + (windows ? "\n\n窗口结果：\n" + windows : ""));
+    } catch (error) {
+      showToast(asErrorMessage(error, "测试 API 失败。"), "error");
+    }
+  }
+
   async function toggleChannel(channel) {
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     const nextEnabled = !channelEnabled(channel);
@@ -1170,6 +1196,7 @@
       if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
       if (action.dataset.action === "copy-login") copyText(appendKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录统计页。");
       if (action.dataset.action === "copy-config") copyChannelBackup(channel);
+      if (action.dataset.action === "test-api") testChannelApi(channel);
       if (action.dataset.action === "forget-saved-key") {
         forgetApiKey(channel);
         renderOverview(state.overview || {});

@@ -247,7 +247,8 @@ function sanitizedAccounts(payload = {}) {
     active: Boolean(item.active),
     saved_at: String(item.saved_at || ""),
     has_oauth_credentials: Boolean(item.has_oauth_credentials),
-    has_login_credentials: Boolean(item.has_login_credentials)
+    has_login_credentials: Boolean(item.has_login_credentials),
+    ready: Boolean(item.has_oauth_credentials || item.has_login_credentials)
   })).filter(item => item.name);
 }
 
@@ -588,6 +589,65 @@ async function validateChannelTargets(payload = {}) {
   return targets;
 }
 
+async function testAdminChannel(id, apiKey = "") {
+  const channel = store.getAdmin(id);
+  if (!channel) return null;
+  const providedKey = String(apiKey || "").trim();
+  const keyInspection = providedKey
+    ? store.inspect(id, providedKey)
+    : { ok: false, reason: "missing_saved_api_key" };
+  const targets = channelTargetWindowIds(channel);
+  const allowedModels = Array.isArray(channel.allowed_models) ? channel.allowed_models : [];
+  const result = {
+    ok: false,
+    channel_status: channel.status,
+    key_ok: Boolean(keyInspection.ok),
+    key_reason: keyInspection.ok ? "" : String(keyInspection.reason || "missing_saved_api_key"),
+    target_window_ids: targets,
+    allowed_models: allowedModels,
+    windows: [],
+    model_count: 0,
+    message: ""
+  };
+  if (!providedKey) {
+    result.message = "当前浏览器没有保存这个朋友的完整 API Key；请从备份恢复或轮换 Key 后再测。";
+  } else if (!keyInspection.ok) {
+    result.message = "朋友 API Key 与服务端保存的 hash 不匹配；这个 Key 已失效或不是这个朋友的 Key。";
+  } else if (keyInspection.status !== "active") {
+    result.message = `朋友通道当前状态是 ${keyInspection.status}，请求会被拒绝。`;
+  }
+  if (!targets.length) {
+    result.message = result.message || "这个朋友没有绑定任何凭证窗口。";
+    return result;
+  }
+  for (const target of targets) {
+    const windowResult = { window_id: target, ok: false, http_status: 0, model_count: 0, message: "" };
+    try {
+      const response = await upstreamFetch(upstreamWindowPath(target, "models"));
+      windowResult.http_status = response.status;
+      if (!response.ok) {
+        windowResult.message = response.status < 500 ? "上游固定窗口拒绝请求。" : "上游固定窗口暂不可用。";
+        try { await response.body?.cancel(); } catch {}
+      } else {
+        const payload = await response.json();
+        const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(channel, item?.id)) : [];
+        windowResult.ok = true;
+        windowResult.model_count = data.length;
+        result.model_count += data.length;
+        windowResult.message = data.length ? "窗口可用。" : "窗口可用，但被允许模型列表过滤后没有模型。";
+      }
+    } catch (error) {
+      windowResult.message = error.publicMessage || error.message || "窗口测试失败。";
+    }
+    result.windows.push(windowResult);
+  }
+  result.ok = Boolean(keyInspection.ok && keyInspection.status === "active" && result.model_count > 0);
+  result.message = result.message || (result.ok
+    ? `测试通过：朋友 API 可用，可见 ${result.model_count} 个模型。`
+    : "朋友 API 仍不可用；请看每个窗口的测试结果。");
+  return result;
+}
+
 function channelTargetWindowIds(channel = {}) {
   const source = Array.isArray(channel.target_window_ids) ? channel.target_window_ids : [];
   const targets = [];
@@ -666,7 +726,7 @@ async function handleAdmin(req, res, url) {
     const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit") || 200)));
     return sendJson(res, 200, { ok: true, logs: store.getLogs({ channelId, limit }) });
   }
-  const match = pathname.match(/^\/api\/admin\/channels\/([^/]+)(?:\/(rotate))?$/);
+  const match = pathname.match(/^\/api\/admin\/channels\/([^/]+)(?:\/(rotate|test))?$/);
   if (!match) return adminError(res, 404, "Not found.");
   const id = decodeURIComponent(match[1]);
   const action = match[2] || "";
@@ -674,6 +734,12 @@ async function handleAdmin(req, res, url) {
     const rotated = store.rotate(id);
     if (!rotated) return adminError(res, 404, "Channel not found.");
     return sendJson(res, 200, { ok: true, channel: channelView(rotated.channel, req), api_key: rotated.apiKey });
+  }
+  if (action === "test" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const result = await testAdminChannel(id, body.api_key || body.apiKey || "");
+    if (!result) return adminError(res, 404, "Channel not found.");
+    return sendJson(res, 200, { ok: true, test: result });
   }
   if (!action && req.method === "PATCH") {
     const body = await readJsonBody(req);
