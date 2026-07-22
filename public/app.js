@@ -433,7 +433,7 @@
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
         "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友短地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
-        "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未限制") + "</span></div>" +
+        "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未配置（全部禁止）") + "</span></div>" +
       "</div>" +
       "<div class=\"key-block\"><span>朋友 API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "完整 Key 不在服务端明文保存，可轮换生成新的") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
         (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
