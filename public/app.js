@@ -8,6 +8,7 @@
     accounts: [],
     models: [],
     publicBaseUrl: "",
+    userBaseUrl: "",
     loading: false,
   };
 
@@ -37,6 +38,7 @@
     keyModal: $("#keyModal"),
     rawApiKey: $("#rawApiKey"),
     modalEndpoint: $("#modalEndpoint"),
+    modalPortalEndpoint: $("#modalPortalEndpoint"),
     editModal: $("#editModal"),
     editForm: $("#editChannelForm"),
     editAccount: $("#editAccount"),
@@ -154,26 +156,32 @@
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
     if (typeof endpoint === "string" && endpoint) return endpoint;
     if (endpoint && typeof endpoint === "object") {
-      return pick(endpoint, ["api_url", "url", "endpoint"], state.publicBaseUrl || window.location.origin);
+      const direct = pick(endpoint, ["api_url", "url", "endpoint"], "");
+      if (direct) return direct;
     }
-    return state.publicBaseUrl || window.location.origin;
+    const slug = accessSlugFor(channel);
+    return slug ? userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/v1" : userBaseUrl();
   }
 
   function friendPortalFor(channel) {
-    const direct = pick(channel, ["friend_portal_url", "external_test_page_url", "portal_url"], "");
+    const direct = pick(channel, ["friend_portal_url", "external_test_page_url", "portal_url", "user_portal_url"], "");
     if (direct) return direct;
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
     if (endpoint && typeof endpoint === "object") {
-      const fromEndpoint = pick(endpoint, ["friend_portal_url", "portal_url", "test_page_url"], "");
+      const fromEndpoint = pick(endpoint, ["friend_portal_url", "portal_url", "test_page_url", "user_portal_url"], "");
       if (fromEndpoint) return fromEndpoint;
     }
-    const publicId = pick(channel, ["public_id", "id", "channel_id"], "");
-    return publicId ? normalizeBaseUrl(state.publicBaseUrl) + "/access/" + encodeURIComponent(publicId) + "/" : "";
+    const slug = accessSlugFor(channel);
+    return slug ? userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/" : "";
   }
 
   function normalizeBaseUrl(url) {
     const candidate = String(url || window.location.origin).trim().replace(/\/+$/, "");
     return candidate || window.location.origin;
+  }
+
+  function userBaseUrl() {
+    return normalizeBaseUrl(state.userBaseUrl || state.publicBaseUrl || window.location.origin);
   }
 
   function formatDate(value) {
@@ -265,6 +273,10 @@
     return value ? String(value).split(",").map((item) => item.trim()).filter(Boolean) : [];
   }
 
+  function accessSlugFor(channel) {
+    return String(channelValue(channel, ["access_slug", "accessSlug"], "") || "").trim();
+  }
+
   function policyLimitLabel(value) {
     return hasLimit(value) ? String(value) : "不限制";
   }
@@ -272,6 +284,7 @@
   function renderChannelCard(channel) {
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     const publicId = pick(channel, ["public_id", "id", "channel_id"], id);
+    const accessSlug = accessSlugFor(channel);
     const label = pick(channel, ["label", "name"], "未命名通道");
     const enabled = channelEnabled(channel);
     const usage = channelUsage(channel);
@@ -290,7 +303,7 @@
       "<div class=\"channel-identity\">" +
         "<div class=\"channel-title-row\"><h3 title=\"" + html(label) + "\">" + html(label) + "</h3>" +
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
-        "<div class=\"channel-meta\"><span>窗口: <code>" + html(account) + "</code></span><span>编号: <code>" + html(publicId) + "</code></span>" +
+        "<div class=\"channel-meta\"><span>窗口: <code>" + html(account) + "</code></span><span>用户地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未限制") + "</span></div>" +
       "</div>" +
@@ -317,11 +330,12 @@
     state.accounts = Array.isArray(data.accounts) ? data.accounts : [];
     state.models = Array.isArray(data.models) ? data.models : [];
     state.publicBaseUrl = normalizeBaseUrl(pick(data.config, ["public_base_url", "publicBaseUrl"], window.location.origin));
+    state.userBaseUrl = normalizeBaseUrl(pick(data.config, ["user_base_url", "userBaseUrl", "public_base_url", "publicBaseUrl"], state.publicBaseUrl));
 
     const configured = Boolean(data.config && data.config.upstream_configured);
     elements.upstreamState.className = "upstream-state " + (configured ? "connected" : "unavailable");
     $("span:last-child", elements.upstreamState).textContent = configured ? "上游凭证已配置" : "上游凭证未配置";
-    elements.publicEndpoint.textContent = state.publicBaseUrl;
+    elements.publicEndpoint.textContent = state.userBaseUrl;
 
     const totalUsage = state.channels.reduce((total, channel) => total + channelUsage(channel).token, 0);
     const requestUsage = state.channels.reduce((total, channel) => total + channelUsage(channel).request, 0);
@@ -385,6 +399,36 @@
     return Number.isFinite(number) && number >= 0 ? number : null;
   }
 
+  function accessSlugOrNull(value) {
+    const slug = String(value == null ? "" : value).trim().toLowerCase();
+    if (!slug) return null;
+    if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
+      throw new Error("用户地址标识只能使用 3-64 位小写字母、数字、连字符或下划线。");
+    }
+    return slug;
+  }
+
+  function randomAccessSlug() {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const length = 16;
+    let suffix = "";
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      const bytes = new Uint8Array(length);
+      window.crypto.getRandomValues(bytes);
+      for (const byte of bytes) suffix += alphabet[byte % alphabet.length];
+    } else {
+      for (let index = 0; index < length; index += 1) {
+        suffix += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+    }
+    return "u_" + suffix;
+  }
+
+  function fillRandomAccessSlug(input) {
+    input.value = randomAccessSlug();
+    input.focus();
+  }
+
   function collectPayload(form, modelContainer) {
     const values = new FormData(form);
     const allowedModels = selectedModels(modelContainer);
@@ -396,6 +440,7 @@
 
     return {
       label,
+      access_slug: accessSlugOrNull(values.get("access_slug")),
       target_window_id: targetWindow,
       allowed_models: allowedModels,
       token_limit: numericOrNull(values.get("token_limit")),
@@ -422,6 +467,7 @@
   function showRawKey(apiKey, channel) {
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
+    elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
     openModal(elements.keyModal);
   }
 
@@ -483,6 +529,7 @@
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     form.elements.id.value = id;
     form.elements.label.value = pick(channel, ["label", "name"], "");
+    form.elements.access_slug.value = accessSlugFor(channel);
     renderAccountOptions(elements.editAccount, channelValue(channel, ["target_window_id", "account_id", "window_id"], ""));
     renderModelPicker(elements.editModels, channelAllowedModels(channel));
     form.elements.token_limit.value = channelValue(channel, ["token_limit", "total_token_limit"], null) ?? "";
@@ -656,7 +703,14 @@
       if (event.key === "Enter") $("#saveAdminKey").click();
     });
     $("#refreshOverview").addEventListener("click", () => loadOverview(true));
-    $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.publicBaseUrl, "已复制外接 API 地址。"));
+    $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.userBaseUrl, "已复制外接 API 地址。"));
+    $("#randomCreateAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.createForm.elements.access_slug));
+    $("#randomEditAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.editForm.elements.access_slug));
+    [elements.createForm.elements.access_slug, elements.editForm.elements.access_slug].forEach((input) => {
+      input.addEventListener("input", () => {
+        input.value = input.value.toLowerCase();
+      });
+    });
     elements.createForm.addEventListener("submit", createChannel);
     elements.editForm.addEventListener("submit", saveEdit);
     $("#refreshLogs").addEventListener("click", loadLogs);
@@ -668,6 +722,7 @@
     });
     $("#copyRawApiKey").addEventListener("click", () => copyText(elements.rawApiKey.textContent, "已复制 API Key。"));
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
+    $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制用户控制台地址。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
 
     document.addEventListener("click", (event) => {

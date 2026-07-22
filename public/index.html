@@ -80,6 +80,14 @@
               通道名称
               <input name="label" maxlength="80" required placeholder="例如：朋友 - 开发测试">
             </label>
+            <div class="form-field access-slug-field">
+              <label for="createAccessSlug">用户地址标识</label>
+              <div class="slug-control">
+                <input id="createAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="留空 = 服务端随机生成">
+                <button class="button button-quiet" id="randomCreateAccessSlug" type="button" title="生成随机用户地址标识">随机生成</button>
+              </div>
+              <small>仅使用小写字母、数字、连字符或下划线；服务端会检查唯一性。</small>
+            </div>
             <label>
               指定凭证窗口
               <select name="target_window_id" id="createAccount" required disabled>
@@ -219,6 +227,11 @@
           <button class="button button-quiet" id="closeKeyModal" type="button">我已保存</button>
         </div>
         <div class="modal-endpoint">
+          <span>用户控制台地址</span>
+          <code id="modalPortalEndpoint"></code>
+          <button class="button button-quiet" id="copyModalPortalEndpoint" type="button">复制地址</button>
+        </div>
+        <div class="modal-endpoint">
           <span>外接 API 地址</span>
           <code id="modalEndpoint"></code>
           <button class="button button-quiet" id="copyModalEndpoint" type="button">复制地址</button>
@@ -237,6 +250,14 @@
             通道名称
             <input name="label" maxlength="80" required>
           </label>
+          <div class="form-field access-slug-field">
+            <label for="editAccessSlug">用户地址标识</label>
+            <div class="slug-control">
+              <input id="editAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false">
+              <button class="button button-quiet" id="randomEditAccessSlug" type="button" title="生成新的随机用户地址标识">随机生成</button>
+            </div>
+            <small>留空后由服务端生成新的随机地址；修改后旧的用户地址将失效。</small>
+          </div>
           <label>
             指定凭证窗口
             <select name="target_window_id" id="editAccount" required></select>

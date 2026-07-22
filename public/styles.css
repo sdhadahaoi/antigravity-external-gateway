@@ -232,7 +232,12 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 
 .channel-form { display: grid; gap: 12px; }
 .channel-form > label,
+.channel-form > .form-field,
 .form-grid > label { display: grid; gap: 6px; color: #c9d5da; font-size: 12px; font-weight: 620; }
+
+.access-slug-field small { color: var(--subtle); font-size: 11px; font-weight: 500; line-height: 1.45; }
+.slug-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.slug-control .button { min-width: 74px; }
 
 .form-grid { display: grid; gap: 10px; }
 .two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -392,6 +397,8 @@ tbody tr:last-child td { border-bottom: 0; }
   .summary-section, .lower-grid { grid-template-columns: 1fr; }
   .two-columns { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
+  .slug-control { grid-template-columns: 1fr; }
+  .slug-control .button { justify-self: start; }
   .channel-card { grid-template-columns: 1fr; }
   .channel-actions { justify-content: flex-start; }
   .log-controls { width: 100%; flex-wrap: wrap; }

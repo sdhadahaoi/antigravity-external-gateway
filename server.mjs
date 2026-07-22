@@ -12,10 +12,14 @@ const ADMIN_KEY = String(process.env.GATEWAY_ADMIN_KEY || "").trim();
 const UPSTREAM_BASE_URL = normalizeBaseUrl(process.env.UPSTREAM_BRIDGE_URL || "");
 const UPSTREAM_API_KEY = String(process.env.UPSTREAM_BRIDGE_API_KEY || "").trim();
 const PUBLIC_BASE_URL = normalizeBaseUrl(process.env.GATEWAY_PUBLIC_BASE_URL || "");
+const ADMIN_BASE_URL = normalizeBaseUrl(process.env.GATEWAY_ADMIN_BASE_URL || "") || PUBLIC_BASE_URL;
+const USER_BASE_URL = normalizeBaseUrl(process.env.GATEWAY_USER_BASE_URL || "") || PUBLIC_BASE_URL;
 const MAX_BODY_BYTES = Math.max(1024, Number(process.env.GATEWAY_MAX_BODY_BYTES || 2 * 1024 * 1024));
+const MAX_PENDING_BODY_READS = Math.max(1, Math.min(100, Number(process.env.GATEWAY_MAX_PENDING_BODY_READS || 2)));
 const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.GATEWAY_UPSTREAM_TIMEOUT_MS || 310000));
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const store = new ChannelStore(STORE_FILE);
+const pendingBodyReads = new Map();
 
 function normalizeBaseUrl(value) {
   const raw = String(value || "").trim().replace(/\/+$/, "");
@@ -43,11 +47,72 @@ function adminAuthorized(req) {
   return Boolean(ADMIN_KEY && safeEqual(bearerToken(req), ADMIN_KEY));
 }
 
-function requestBaseUrl(req) {
-  if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL;
+function requestOrigin(req) {
   const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || (req.socket.encrypted ? "https" : "http");
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || `localhost:${PORT}`).split(",")[0].trim();
   return `${proto}://${host}`.replace(/\/+$/, "");
+}
+
+function requestHost(req) {
+  return String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
+}
+
+function baseHost(baseUrl) {
+  if (!baseUrl) return "";
+  try {
+    return new URL(baseUrl).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function adminBaseUrl(req) {
+  return ADMIN_BASE_URL || requestOrigin(req);
+}
+
+function userBaseUrl(req) {
+  return USER_BASE_URL || requestOrigin(req);
+}
+
+function reserveBodyRead(channel = {}) {
+  const channelId = String(channel.id || "");
+  if (!channelId) return null;
+  const configuredLimit = channel.concurrency_limit;
+  const limit = configuredLimit === null || configuredLimit === undefined
+    ? MAX_PENDING_BODY_READS
+    : Math.max(0, Number(configuredLimit));
+  const active = pendingBodyReads.get(channelId) || 0;
+  if (!Number.isFinite(limit) || active >= limit) return null;
+  pendingBodyReads.set(channelId, active + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const current = pendingBodyReads.get(channelId) || 0;
+    if (current <= 1) pendingBodyReads.delete(channelId);
+    else pendingBodyReads.set(channelId, current - 1);
+  };
+}
+
+function configuredSurface(req) {
+  const adminHost = baseHost(ADMIN_BASE_URL);
+  const userHost = baseHost(USER_BASE_URL);
+  // A single legacy/public origin remains supported for local development and
+  // existing deployments. Production isolation is enabled only with distinct
+  // administrator and user origins configured.
+  if (!adminHost || !userHost || adminHost === userHost) return "shared";
+  const host = requestHost(req);
+  if (host === adminHost) return "admin";
+  if (host === userHost) return "user";
+  return "unknown";
+}
+
+function isAdminSurface(surface) {
+  return surface === "shared" || surface === "admin";
+}
+
+function isUserSurface(surface) {
+  return surface === "shared" || surface === "user";
 }
 
 function send(res, statusCode, contentType, body, headers = {}) {
@@ -153,14 +218,17 @@ function upstreamWindowPath(windowId, suffix) {
 
 function channelView(channel, req) {
   const publicId = String(channel.public_id || channel.publicId || channel.id || "");
-  const base = `${requestBaseUrl(req)}/access/${encodeURIComponent(publicId)}/v1`;
+  const accessSlug = String(channel.access_slug || publicId || "");
+  const root = `${userBaseUrl(req)}/u/${encodeURIComponent(accessSlug)}`;
+  const base = `${root}/v1`;
   return {
     ...channel,
     public_id: publicId,
+    access_slug: accessSlug,
     endpoint: base,
     models_endpoint: `${base}/models`,
     chat_endpoint: `${base}/chat/completions`,
-    friend_portal_url: `${requestBaseUrl(req)}/access/${encodeURIComponent(publicId)}/`
+    friend_portal_url: `${root}/`
   };
 }
 
@@ -227,37 +295,42 @@ function outputTextFromCompletion(payload = {}) {
 }
 
 function createSseCollector() {
-  const decoder = new TextDecoder();
-  let buffered = "";
   let output = "";
-  const consumeLine = line => {
-    if (!line.startsWith("data:")) return;
-    const data = line.slice(5).trim();
-    if (!data || data === "[DONE]") return;
-    try {
-      const payload = JSON.parse(data);
-      for (const choice of payload.choices || []) {
+  return {
+    consume(payload) {
+      for (const choice of payload?.choices || []) {
         const value = choice?.delta?.content ?? choice?.message?.content ?? "";
         output += Array.isArray(value) ? value.map(part => part?.text || part?.content || "").join("") : String(value || "");
       }
-    } catch {}
-  };
-  return {
-    write(chunk) {
-      buffered += decoder.decode(chunk, { stream: true });
-      let newline = buffered.indexOf("\n");
-      while (newline >= 0) {
-        consumeLine(buffered.slice(0, newline).replace(/\r$/, ""));
-        buffered = buffered.slice(newline + 1);
-        newline = buffered.indexOf("\n");
-      }
     },
     finish() {
-      buffered += decoder.decode();
-      if (buffered) consumeLine(buffered.replace(/\r$/, ""));
       return output;
     }
   };
+}
+
+function safeSseCompletionChunk(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || payload.error || !Array.isArray(payload.choices)) {
+    return null;
+  }
+  // Rebuild the frame instead of forwarding arbitrary upstream SSE JSON. The
+  // choices remain intact for OpenAI-client compatibility, while diagnostics,
+  // provider metadata and unknown top-level fields never cross the gateway.
+  const chunk = {
+    object: typeof payload.object === "string" ? payload.object.slice(0, 80) : "chat.completion.chunk",
+    choices: payload.choices
+  };
+  if (typeof payload.id === "string") chunk.id = payload.id.slice(0, 256);
+  if (Number.isFinite(payload.created)) chunk.created = Math.trunc(payload.created);
+  if (typeof payload.model === "string") chunk.model = payload.model.slice(0, 160);
+  if (payload.usage && typeof payload.usage === "object" && !Array.isArray(payload.usage)) {
+    const usage = {};
+    for (const field of ["prompt_tokens", "completion_tokens", "total_tokens"]) {
+      if (Number.isFinite(payload.usage[field])) usage[field] = Math.max(0, Math.trunc(payload.usage[field]));
+    }
+    if (Object.keys(usage).length) chunk.usage = usage;
+  }
+  return chunk;
 }
 
 function waitForDrain(res) {
@@ -274,7 +347,11 @@ function waitForDrain(res) {
 
 async function pipeSse(res, upstreamResponse) {
   const collector = createSseCollector();
+  const decoder = new TextDecoder();
+  let buffered = "";
   let closed = false;
+  let terminal = false;
+  let upstreamError = false;
   res.once("close", () => { closed = true; });
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
@@ -283,13 +360,83 @@ async function pipeSse(res, upstreamResponse) {
     "x-accel-buffering": "no",
     "x-content-type-options": "nosniff"
   });
+
+  const writeFrame = async data => {
+    if (closed || res.destroyed || res.writableEnded) return;
+    const frame = `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
+    if (!res.write(frame)) await waitForDrain(res);
+  };
+  const endWithGenericError = async () => {
+    if (terminal) return;
+    upstreamError = true;
+    terminal = true;
+    await writeFrame({
+      error: {
+        message: "The model service is temporarily unavailable.",
+        type: "api_error",
+        code: "gateway_error"
+      }
+    });
+    await writeFrame("[DONE]");
+  };
+  const relayEvent = async event => {
+    const dataLines = event
+      .split(/\r?\n/)
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trimStart());
+    if (!dataLines.length || terminal) return;
+    const data = dataLines.join("\n").trim();
+    if (!data) return;
+    if (data === "[DONE]") {
+      terminal = true;
+      await writeFrame("[DONE]");
+      return;
+    }
+    let payload;
+    try {
+      payload = JSON.parse(data);
+    } catch {
+      await endWithGenericError();
+      return;
+    }
+    // Only sanitized OpenAI-compatible completion chunks cross this boundary.
+    // In particular, upstream `error` SSE data becomes a generic error.
+    const safePayload = safeSseCompletionChunk(payload);
+    if (!safePayload) {
+      await endWithGenericError();
+      return;
+    }
+    collector.consume(safePayload);
+    await writeFrame(safePayload);
+  };
+  const drainEvents = async flush => {
+    let separator = /\r?\n\r?\n/.exec(buffered);
+    while (separator) {
+      const event = buffered.slice(0, separator.index);
+      buffered = buffered.slice(separator.index + separator[0].length);
+      await relayEvent(event);
+      if (terminal || closed) return;
+      separator = /\r?\n\r?\n/.exec(buffered);
+    }
+    if (flush && buffered.trim()) {
+      const event = buffered;
+      buffered = "";
+      await relayEvent(event);
+    }
+  };
   for await (const chunk of Readable.fromWeb(upstreamResponse.body)) {
-    collector.write(chunk);
-    if (closed || res.destroyed) break;
-    if (!res.write(chunk)) await waitForDrain(res);
+    buffered += decoder.decode(chunk, { stream: true });
+    await drainEvents(false);
+    if (terminal || closed || res.destroyed) break;
+  }
+  buffered += decoder.decode();
+  if (!terminal && !closed && !res.destroyed) await drainEvents(true);
+  if (!terminal && !closed && !res.destroyed) {
+    terminal = true;
+    await writeFrame("[DONE]");
   }
   if (!res.writableEnded && !res.destroyed) res.end();
-  return { output_text: collector.finish(), client_closed: closed };
+  return { output_text: collector.finish(), client_closed: closed, upstream_error: upstreamError };
 }
 
 function policyStatus(reason = "") {
@@ -307,6 +454,12 @@ function policyMessage(reason = "") {
   if (/model/i.test(reason)) return "This model is not allowed for this API key.";
   if (/disabled|revoked/i.test(reason)) return "This API key is disabled.";
   return "Unauthorized.";
+}
+
+function externalPolicyCode(reason = "") {
+  // A public endpoint must not reveal whether a guessed user slug exists.
+  // The same generic error is returned for an unknown channel and a bad key.
+  return /^(not_found|invalid_api_key)$/.test(String(reason)) ? "unauthorized" : String(reason || "unauthorized");
 }
 
 function userChannelView(channel = {}) {
@@ -373,7 +526,13 @@ async function handleAdmin(req, res, url) {
     const [accounts, models] = await Promise.all([upstreamAccounts(), upstreamModels()]);
     return sendJson(res, 200, {
       ok: true,
-      config: { public_base_url: requestBaseUrl(req), upstream_configured: upstreamConfigured() },
+      config: {
+        admin_base_url: adminBaseUrl(req),
+        user_base_url: userBaseUrl(req),
+        // Retained for the current dashboard and older API consumers.
+        public_base_url: userBaseUrl(req),
+        upstream_configured: upstreamConfigured()
+      },
       channels: store.list().map(channel => channelView(channel, req)),
       accounts,
       models
@@ -446,33 +605,79 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
 }
 
 async function handleExternalModels(req, res, accessId) {
-  const auth = store.authorize(accessId, bearerToken(req));
-  if (!auth?.ok) return apiError(res, policyStatus(auth?.reason), policyMessage(auth?.reason), auth?.reason || "unauthorized");
+  // Model discovery is free in token terms, but it still reaches the selected
+  // upstream window. Reserve a zero-token request so request, RPM and
+  // concurrency policies cannot be bypassed through repeated /models calls.
+  const reserved = store.checkAndReserve({
+    id: accessId,
+    apiKey: bearerToken(req),
+    model: "models",
+    inputTokens: 0,
+    maxOutputTokens: 0,
+    estimatedTokens: 0,
+    allowZeroTokens: true,
+    skipModelPolicy: true,
+    skipTokenLimit: true
+  });
+  if (!reserved?.ok) return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), externalPolicyCode(reserved?.reason));
+  const startedAt = Date.now();
+  let settled = false;
+  const settle = status => {
+    if (settled) return;
+    settled = true;
+    store.settleReservation(reserved.reservationId, {
+      model: "models",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      latency_ms: Date.now() - startedAt,
+      status
+    });
+  };
   try {
-    const response = await upstreamFetch(upstreamWindowPath(auth.channel.target_window_id, "models"));
-    if (!response.ok) return apiError(res, 502, "The model service is temporarily unavailable.", "upstream_unavailable");
+    const response = await upstreamFetch(upstreamWindowPath(reserved.channel.target_window_id, "models"));
+    if (!response.ok) {
+      try { await response.body?.cancel(); } catch {}
+      settle("upstream_error");
+      return apiError(res, 502, "The model service is temporarily unavailable.", "upstream_unavailable");
+    }
     const payload = await response.json();
-    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(auth.channel, item?.id)) : [];
+    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(reserved.channel, item?.id)) : [];
+    settle("ok");
     return sendJson(res, 200, { object: "list", data });
   } catch (error) {
+    settle("upstream_error");
     return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
   }
 }
 
 async function handleExternalChat(req, res, accessId) {
+  // Authenticate before buffering request bytes. A guessed URL/key must not be
+  // able to consume the configured request-body budget or bypass concurrency.
+  const provisional = store.authorize(accessId, bearerToken(req));
+  if (!provisional?.ok) {
+    req.resume();
+    return apiError(res, policyStatus(provisional?.reason), policyMessage(provisional?.reason), externalPolicyCode(provisional?.reason));
+  }
+
   let body;
+  const releaseBodyRead = reserveBodyRead(provisional.channel);
+  if (!releaseBodyRead) {
+    req.resume();
+    return apiError(res, 429, policyMessage("concurrency_limit_exceeded"), "concurrency_limit_exceeded");
+  }
   try {
     body = await readJsonBody(req);
   } catch (error) {
     return apiError(res, error.statusCode || 400, error.message || "Invalid request.", "invalid_request");
+  } finally {
+    releaseBodyRead();
   }
   const model = String(body.model || "").trim();
   const inputText = messageText(body.messages);
   const inputTokens = estimateTokens(inputText);
   if (!model || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
 
-  const provisional = store.authorize(accessId, bearerToken(req));
-  if (!provisional?.ok) return apiError(res, policyStatus(provisional?.reason), policyMessage(provisional?.reason), provisional?.reason || "unauthorized");
   if (!modelAllowed(provisional.channel, model)) {
     store.recordRejected(accessId, { model, estimatedTokens: inputTokens, reason: "model_forbidden" });
     return apiError(res, 403, policyMessage("model_forbidden"), "model_forbidden");
@@ -491,7 +696,7 @@ async function handleExternalChat(req, res, accessId) {
     estimatedTokens: inputTokens + maxOutputTokens
   });
   if (!reserved?.ok) {
-    return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), reserved?.reason || "unauthorized");
+    return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), externalPolicyCode(reserved?.reason));
   }
 
   const startedAt = Date.now();
@@ -520,7 +725,10 @@ async function handleExternalChat(req, res, accessId) {
     }
     if (body.stream) {
       const streamed = await pipeSse(res, upstream);
-      settle({ outputTokens: estimateTokens(streamed.output_text), status: streamed.client_closed ? "client_closed" : "ok" });
+      settle({
+        outputTokens: estimateTokens(streamed.output_text),
+        status: streamed.client_closed ? "client_closed" : streamed.upstream_error ? "upstream_error" : "ok"
+      });
       return;
     }
     const raw = Buffer.from(await upstream.arrayBuffer());
@@ -558,28 +766,41 @@ function staticFile(res, filename, contentType) {
 }
 
 async function route(req, res) {
-  const base = requestBaseUrl(req);
-  const url = new URL(req.url || "/", base);
+  const url = new URL(req.url || "/", requestOrigin(req));
+  const surface = configuredSurface(req);
+  // Render health checks are allowed on either custom domain and the service
+  // hostname. Every other endpoint is limited to its configured surface.
+  if (url.pathname === "/health") return sendJson(res, 200, { ok: true, service: "antigravity-external-gateway" });
+  if (surface === "unknown") return sendJson(res, 404, { ok: false, message: "Not found." });
   if (req.method === "OPTIONS") {
     res.writeHead(204, { allow: "GET,POST,PATCH,DELETE,OPTIONS", "cache-control": "no-store" });
     return res.end();
   }
-  if (url.pathname === "/health") return sendJson(res, 200, { ok: true, service: "antigravity-external-gateway" });
-  if (url.pathname.startsWith("/api/admin/")) return handleAdmin(req, res, url);
-  const userPortal = url.pathname.match(/^\/access\/([A-Za-z0-9_-]+)\/user\/(overview|logs|token-estimate)$/);
-  if (userPortal) return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
-  const access = url.pathname.match(/^\/access\/([A-Za-z0-9_-]+)\/v1\/(models|chat\/completions)$/);
+
+  if (url.pathname.startsWith("/api/admin/")) {
+    if (!isAdminSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
+    return handleAdmin(req, res, url);
+  }
+
+  const userPortal = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|token-estimate)$/);
+  if (userPortal) {
+    if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
+    return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
+  }
+  const access = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|chat\/completions)$/);
   if (access) {
+    if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     if (access[2] === "models" && req.method === "GET") return handleExternalModels(req, res, access[1]);
     if (access[2] === "chat/completions" && req.method === "POST") return handleExternalChat(req, res, access[1]);
     return apiError(res, 405, "Method not allowed.", "method_not_allowed");
   }
-  if (/^\/access\/[A-Za-z0-9_-]+\/$/.test(url.pathname) && req.method === "GET" && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
-  if (url.pathname === "/" && req.method === "GET" && staticFile(res, "index.html", "text/html; charset=utf-8")) return;
-  if ((url.pathname === "/assets/app.js" || url.pathname === "/app.js") && req.method === "GET" && staticFile(res, "app.js", "application/javascript; charset=utf-8")) return;
-  if ((url.pathname === "/assets/styles.css" || url.pathname === "/styles.css") && req.method === "GET" && staticFile(res, "styles.css", "text/css; charset=utf-8")) return;
-  if (url.pathname === "/assets/user.js" && req.method === "GET" && staticFile(res, "user.js", "application/javascript; charset=utf-8")) return;
-  if (url.pathname === "/assets/user.css" && req.method === "GET" && staticFile(res, "user.css", "text/css; charset=utf-8")) return;
+
+  if (/^\/u\/[a-z0-9][a-z0-9_-]{2,63}\/$/.test(url.pathname) && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
+  if (url.pathname === "/" && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "index.html", "text/html; charset=utf-8")) return;
+  if ((url.pathname === "/assets/app.js" || url.pathname === "/app.js") && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "app.js", "application/javascript; charset=utf-8")) return;
+  if ((url.pathname === "/assets/styles.css" || url.pathname === "/styles.css") && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "styles.css", "text/css; charset=utf-8")) return;
+  if (url.pathname === "/assets/user.js" && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.js", "application/javascript; charset=utf-8")) return;
+  if (url.pathname === "/assets/user.css" && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.css", "text/css; charset=utf-8")) return;
   return sendJson(res, 404, { ok: false, message: "Not found." });
 }
 

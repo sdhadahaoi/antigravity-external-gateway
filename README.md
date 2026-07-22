@@ -29,7 +29,7 @@ Antigravity
 网关可为每个外接用户生成不同的 API 路径和 Key。路径只是网关的虚拟入口，例如：
 
 ```text
-https://gateway.example.com/access/<随机通道 ID>/v1
+https://api.example.com/u/<朋友专属短地址>/v1
 ```
 
 该地址会转发到真实上游，但绝不是原服务地址的重定向或泄露。外接 Key 也不会等同于上游 Key。
@@ -58,8 +58,17 @@ https://gateway.example.com/access/<随机通道 ID>/v1
 
 ## 两套界面
 
-- 管理员界面：`/`。使用 `GATEWAY_ADMIN_KEY`，可创建/编辑/停用/轮换通道，选择任意已绑定账号的窗口，并查看全部通道的额度和日志。
-- 用户界面：`/access/<随机通道 ID>/`。朋友使用自己的外接 API Key 登录，只能查看该通道的额度、有效期、模型、个人日志和 Token 预估，并可进行模型测试或最多三次总尝试的手动重试。
+- 管理员界面：`https://admin.example.com/`。使用 `GATEWAY_ADMIN_KEY`，可创建/编辑/停用/轮换通道，选择任意已绑定账号的窗口，并查看全部通道的额度和日志。
+- 用户界面：`https://api.example.com/u/<朋友专属短地址>/`。朋友使用自己的外接 API Key 登录，只能查看该通道的额度、有效期、模型、个人日志和 Token 预估，并可进行模型测试或最多三次总尝试的手动重试。管理员可在创建或编辑通道时自定义该短地址，或让网关生成一个不可预测的随机地址。
+
+生产环境应使用两个不同的自定义域名，并将它们绑定到**同一个** Render Web Service：`admin.example.com` 仅提供管理员界面，`api.example.com` 仅提供用户门户和外接 API。创建通道后，管理后台生成并复制给朋友的地址固定为用户/API 域名，例如：
+
+```text
+朋友门户：https://api.example.com/u/u_9d7a2e6c4b18/
+模型 API：https://api.example.com/u/u_9d7a2e6c4b18/v1
+```
+
+不要把管理员域名、管理员 Key 或 Render Dashboard 地址发给朋友。域名分离只是降低误发现的机会；管理员路由仍必须由服务端的管理员鉴权和主机路由限制保护，不能把地址保密当作权限控制。
 
 用户界面不会返回窗口编号、上游地址、OAuth、管理员 Key、其他通道或修改入口。用户 Key 只保存在浏览器当前会话中；通道到期或停用后仍可查看自己的状态和历史，但不能继续调用模型。
 
@@ -74,10 +83,15 @@ https://gateway.example.com/access/<随机通道 ID>/v1
 | `UPSTREAM_BRIDGE_URL` | 原 `zeabur-antigravity-bridge` 的完整基础 URL | Render Secret，例：`https://...onrender.com` |
 | `UPSTREAM_BRIDGE_API_KEY` | 原 bridge 所需的 API Key | Render Secret，绝不提交 |
 | `GATEWAY_DATA_DIR` | 网关状态、配额和日志数据目录 | Render 中设为 `/var/data` |
-| `GATEWAY_PUBLIC_BASE_URL` | 对外公布的网关基础 URL | 可留空；绑定自定义域名后填写 `https://api.example.com` |
-| `GATEWAY_MAX_BODY_BYTES` | 单请求最大正文大小（字节） | 默认 `10485760`（10 MiB） |
+| `GATEWAY_ADMIN_BASE_URL` | 管理员界面的公开基础 URL | 生产环境填写 `https://admin.example.com` |
+| `GATEWAY_USER_BASE_URL` | 用户门户和外接 API 的公开基础 URL | 生产环境填写 `https://api.example.com`；新建通道的门户/API 地址由此生成 |
+| `GATEWAY_PUBLIC_BASE_URL` | 旧版单一公开基础 URL 的兼容回退 | 新部署不建议设置；仅在尚未拆分域名的旧部署中使用 |
+| `GATEWAY_MAX_BODY_BYTES` | 单请求最大正文大小（字节） | 代码默认 `2097152`（2 MiB）；`render.yaml` 示例显式设为 `10485760`（10 MiB） |
+| `GATEWAY_MAX_PENDING_BODY_READS` | 未配置通道并发上限时，单通道最多同时读取的请求正文数 | 默认 `2` |
 
 `UPSTREAM_BRIDGE_URL` 和 `UPSTREAM_BRIDGE_API_KEY` 是唯一接触原服务的变量，应只在 Render 的 Environment 页面设置为 Secret。浏览器端、日志、JSON 导出和错误信息都不应回显它们。
+
+URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` 分别优先用于管理员与用户/API 两个界面；缺少其中任一个时，才使用 `GATEWAY_PUBLIC_BASE_URL` 作为该界面的兼容回退；三个变量都未设置时，服务仅在本地或临时场景从当前请求推断地址。要获得真正分离的两个外部地址，生产环境必须同时设置前两个变量。
 
 ## Render 部署
 
@@ -93,15 +107,21 @@ https://gateway.example.com/access/<随机通道 ID>/v1
 
 不要使用 Render Free 的临时文件系统保存这些数据：重启、重新部署或实例替换会导致配额与日志丢失。挂载磁盘的 Render 计划通常需要付费实例；如改用托管数据库，也必须把网关状态迁移到数据库后再移除磁盘。
 
-### 自定义域名（可选）
+### 双自定义域名
 
-Render 默认会提供一个 `onrender.com` 地址，已经足够作为对外网关入口。需要更稳定、易记的地址时，在 Render 服务的 **Custom Domains** 中绑定域名，例如 `api.example.com`，然后把：
+在同一个 Render 服务的 **Custom Domains** 中添加并验证两个域名：
+
+1. `admin.example.com`：只用于管理员登录和管理 API；
+2. `api.example.com`：只用于朋友门户和外接 API。
+
+随后在该服务的 Environment 页面设置：
 
 ```text
-GATEWAY_PUBLIC_BASE_URL=https://api.example.com
+GATEWAY_ADMIN_BASE_URL=https://admin.example.com
+GATEWAY_USER_BASE_URL=https://api.example.com
 ```
 
-设置为该公开地址。该变量只影响网关生成给朋友的虚拟地址，不会暴露上游地址。
+两个域名仍指向同一个 Render 服务和同一份持久化数据，不需要创建两台服务，也不会复制 OAuth 或上游配置。管理员在 `https://admin.example.com/` 创建通道后，网关会只生成 `https://api.example.com/u/<朋友专属短地址>/...` 形式的朋友门户与 API 地址。短地址可由管理员指定，也可留空让服务端随机生成；服务端会拒绝重复短地址。旧版只有一个域名时，可暂时只设置 `GATEWAY_PUBLIC_BASE_URL`；这会让两个界面共用同一基础地址，不能提供域名级隔离。
 
 ## 本地运行
 
@@ -111,6 +131,8 @@ GATEWAY_PUBLIC_BASE_URL=https://api.example.com
 npm install
 $env:PORT = "3000"
 $env:GATEWAY_ADMIN_KEY = "change-this-before-use"
+$env:GATEWAY_ADMIN_BASE_URL = "http://127.0.0.1:3000"
+$env:GATEWAY_USER_BASE_URL = "http://127.0.0.1:3000"
 $env:UPSTREAM_BRIDGE_URL = "https://your-original-bridge.example"
 $env:UPSTREAM_BRIDGE_API_KEY = "your-upstream-key"
 $env:GATEWAY_DATA_DIR = ".\\data"

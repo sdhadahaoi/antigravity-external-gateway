@@ -1,9 +1,9 @@
 (function () {
   "use strict";
 
-  const accessId = location.pathname.match(/^\/access\/([A-Za-z0-9_-]+)(?:\/|$)/)?.[1] || "";
-  const accessRoot = accessId ? "/access/" + encodeURIComponent(accessId) : "";
-  const sessionKeyName = "ag_external_gateway_user_key:" + accessId;
+  const accessSlug = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/)?.[1] || "";
+  const accessRoot = accessSlug ? "/u/" + encodeURIComponent(accessSlug) : "";
+  const sessionKeyName = "ag_external_gateway_user_key:" + accessSlug;
   const state = {
     overview: null,
     available: false,
@@ -50,7 +50,7 @@
 
   function storedKey() {
     try {
-      return accessId ? sessionStorage.getItem(sessionKeyName) || "" : "";
+      return accessSlug ? sessionStorage.getItem(sessionKeyName) || "" : "";
     } catch (_) {
       return "";
     }
@@ -413,7 +413,7 @@
 
   async function connect(event) {
     event.preventDefault();
-    if (!accessId) {
+    if (!accessSlug) {
       setMessage(elements.connectMessage, "当前访问地址无效。", "error");
       return;
     }
@@ -502,7 +502,7 @@
   elements.sendTest.addEventListener("click", () => { void invokeTest(false); });
   elements.retryTest.addEventListener("click", () => { void invokeTest(true); });
 
-  if (!accessId) {
+  if (!accessSlug) {
     elements.connectButton.disabled = true;
     setConnection("地址无效", "error");
     setMessage(elements.connectMessage, "当前访问地址无效。", "error");

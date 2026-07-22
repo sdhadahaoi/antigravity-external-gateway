@@ -24,8 +24,17 @@ services:
       # Gateway state must live on the persistent disk, not the ephemeral service filesystem.
       - key: GATEWAY_DATA_DIR
         value: /var/data
-      # Optional public base URL, useful after binding a custom domain.
+      # Public address for the administrator-only surface, e.g. https://admin.example.com.
+      - key: GATEWAY_ADMIN_BASE_URL
+        sync: false
+      # Public address for the friend portal and external API, e.g. https://api.example.com.
+      # Generated channel URLs use this value, never the admin surface address.
+      - key: GATEWAY_USER_BASE_URL
+        sync: false
+      # Legacy single-domain compatibility fallback. Leave unset on new dual-domain deployments.
       - key: GATEWAY_PUBLIC_BASE_URL
         sync: false
       - key: GATEWAY_MAX_BODY_BYTES
         value: "10485760"
+      - key: GATEWAY_MAX_PENDING_BODY_READS
+        value: "2"

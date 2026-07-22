@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -27,12 +27,14 @@ test('creates persistent credentials without persisting or exposing raw keys', (
   });
 
   assert.match(created.channel.id, /^agc_[A-Za-z0-9_-]+$/);
+  assert.match(created.channel.access_slug, /^u_[a-f0-9]{32}$/);
   assert.match(created.apiKey, /^agk_[A-Za-z0-9_-]+$/);
   assert.equal(created.channel.target_window_id, 'oauth-window-a');
   assert.equal('apiKey' in created.channel, false);
   assert.equal('key_hash' in created.channel, false);
 
   const publicView = store.getPublic(created.channel.id, { now: '2030-01-01T12:00:00.000Z' });
+  assert.equal(publicView.access_slug, created.channel.access_slug);
   assert.equal('target_window_id' in publicView, false);
   assert.equal('usage' in publicView, false);
   assert.equal('key_hint' in publicView, false);
@@ -42,8 +44,75 @@ test('creates persistent credentials without persisting or exposing raw keys', (
   assert.match(persisted, /"key_hash": "[a-f0-9]{64}"/);
 
   const reopened = new ChannelStore(path);
-  assert.equal(reopened.authorize(created.channel.id, created.apiKey, '2030-01-01T12:00:00.000Z').ok, true);
+  assert.equal(reopened.authorize(created.channel.access_slug, created.apiKey, '2030-01-01T12:00:00.000Z').ok, true);
   assert.equal(reopened.authorize(created.channel.id, 'wrong-key', '2030-01-01T12:00:00.000Z').reason, 'invalid_api_key');
+});
+
+test('supports unique custom access slugs and resolves them across channel operations', (t) => {
+  const { store } = makeStore(t);
+  const first = store.create({ access_slug: 'friend-alpha_01' });
+  const second = store.create({ access_slug: 'friend-beta-02' });
+  const reservedName = store.create({ access_slug: 'constructor' });
+
+  assert.equal(first.channel.access_slug, 'friend-alpha_01');
+  assert.equal(store.getAdmin('friend-alpha_01').id, first.channel.id);
+  assert.equal(store.getPublic('friend-alpha_01').access_slug, 'friend-alpha_01');
+  assert.equal(store.inspect('friend-alpha_01', first.apiKey).ok, true);
+  assert.equal(store.authorize('friend-alpha_01', first.apiKey).ok, true);
+  assert.equal(store.getAdmin('constructor').id, reservedName.channel.id);
+  assert.equal(store.authorize('constructor', reservedName.apiKey).ok, true);
+
+  const reservation = store.checkAndReserve({
+    id: 'friend-alpha_01',
+    apiKey: first.apiKey,
+    model: 'any',
+    estimatedTokens: 7,
+    now: 1_000,
+  });
+  assert.equal(reservation.ok, true);
+  assert.equal(store.summary('friend-alpha_01', { now: 1_000 }).channel.id, first.channel.id);
+  assert.deepEqual(
+    store.getLogs('friend-alpha_01').map((entry) => entry.channel_id),
+    store.getLogs(first.channel.id).map((entry) => entry.channel_id),
+  );
+
+  const updated = store.update('friend-alpha_01', { access_slug: 'friend-renamed_03' });
+  assert.equal(updated.access_slug, 'friend-renamed_03');
+  assert.equal(store.getPublic('friend-alpha_01'), null);
+  assert.equal(store.getPublic('friend-renamed_03').id, first.channel.id);
+
+  assert.throws(() => store.create({ access_slug: 'friend-renamed_03' }), /access_slug is already in use/);
+  assert.throws(() => store.update(second.channel.id, { access_slug: 'friend-renamed_03' }), /access_slug is already in use/);
+  assert.throws(() => store.create({ access_slug: 'ab' }), /between 3 and 64 characters/);
+  assert.throws(() => store.create({ access_slug: 'Friend-Alpha' }), /must start with a lowercase letter or number/);
+});
+
+test('migrates legacy channel records with a persistent random access slug', (t) => {
+  const { path } = makeStore(t);
+  const legacyId = 'agc_legacy_channel';
+  writeFileSync(path, JSON.stringify({
+    version: 1,
+    channels: {
+      [legacyId]: {
+        id: legacyId,
+        key_hash: '0'.repeat(64),
+        key_hint: 'legacy',
+        label: 'Legacy friend',
+        enabled: true,
+      },
+    },
+    reservations: {},
+    logs: [],
+  }));
+
+  const migrated = new ChannelStore(path);
+  const channel = migrated.getAdmin(legacyId);
+  assert.match(channel.access_slug, /^u_[a-f0-9]{32}$/);
+  assert.equal(migrated.getPublic(channel.access_slug).id, legacyId);
+
+  const persisted = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(persisted.channels[legacyId].access_slug, channel.access_slug);
+  assert.equal(new ChannelStore(path).getAdmin(legacyId).access_slug, channel.access_slug);
 });
 
 test('reserves quota before upstream work, settles actual use, and enforces policy', (t) => {
