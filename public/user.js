@@ -35,6 +35,7 @@
     allowedModelSummary: $("allowedModelSummary"),
     allowedModels: $("allowedModels"),
     numberUnit: $("numberUnit"),
+    quotaNumberUnit: $("quotaNumberUnit"),
     refreshQuota: $("refreshQuota"),
     oauthQuotaResult: $("oauthQuotaResult"),
     modelSelect: $("modelSelect"),
@@ -73,6 +74,18 @@
     try {
       localStorage.setItem("ag_external_gateway_number_unit", value || "raw");
     } catch (_) {}
+  }
+
+  function setNumberUnit(value, source) {
+    const next = value || "raw";
+    state.numberUnit = next;
+    setStoredNumberUnit(next);
+    [elements.numberUnit, elements.quotaNumberUnit].forEach((select) => {
+      if (select && select !== source) select.value = next;
+    });
+    if (state.overview) renderOverview(state.overview);
+    if (state.quotaPayload) renderQuota(state.quotaPayload);
+    void loadLogs();
   }
 
   function urlKey() {
@@ -670,13 +683,11 @@
   elements.retryTest.addEventListener("click", () => { void invokeTest(true); });
   if (elements.numberUnit) {
     elements.numberUnit.value = state.numberUnit;
-    elements.numberUnit.addEventListener("change", () => {
-      state.numberUnit = elements.numberUnit.value || "raw";
-      setStoredNumberUnit(state.numberUnit);
-      if (state.overview) renderOverview(state.overview);
-      if (state.quotaPayload) renderQuota(state.quotaPayload);
-      void loadLogs();
-    });
+    elements.numberUnit.addEventListener("change", () => setNumberUnit(elements.numberUnit.value, elements.numberUnit));
+  }
+  if (elements.quotaNumberUnit) {
+    elements.quotaNumberUnit.value = state.numberUnit;
+    elements.quotaNumberUnit.addEventListener("change", () => setNumberUnit(elements.quotaNumberUnit.value, elements.quotaNumberUnit));
   }
 
   try {
