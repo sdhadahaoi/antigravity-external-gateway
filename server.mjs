@@ -21,6 +21,7 @@ const PUBLIC_DIR = path.join(process.cwd(), "public");
 const MODEL_ALIASES = parseModelAliases(process.env.GATEWAY_MODEL_ALIASES || "");
 const store = new ChannelStore(STORE_FILE);
 const pendingBodyReads = new Map();
+const pendingWindowRequests = new Map();
 
 function normalizeBaseUrl(value) {
   const raw = String(value || "").trim().replace(/\/+$/, "");
@@ -244,6 +245,25 @@ async function upstreamFetch(pathname, options = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function reserveWindowConcurrency(channel = {}, windowId = "") {
+  const limitValue = channel.window_concurrency_limit;
+  if (limitValue === null || limitValue === undefined) return () => {};
+  const limit = Math.max(0, Number(limitValue));
+  if (!Number.isFinite(limit) || limit <= 0) return null;
+  const key = String(windowId || "");
+  const active = pendingWindowRequests.get(key) || 0;
+  if (active >= limit) return null;
+  pendingWindowRequests.set(key, active + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const current = pendingWindowRequests.get(key) || 0;
+    if (current <= 1) pendingWindowRequests.delete(key);
+    else pendingWindowRequests.set(key, current - 1);
+  };
 }
 
 async function upstreamJson(pathname, options = {}) {
@@ -470,13 +490,99 @@ function compactTokenFamily(family = {}) {
   };
 }
 
-function compactTokenEstimate(report = {}, families = null) {
+function tokenAccountProfileNames(account = {}) {
+  return [account.profile, account.name, account.account]
+    .map(value => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function tokenAccountMatchesProfiles(account = {}, profiles = null) {
+  if (!profiles) return true;
+  return tokenAccountProfileNames(account).some(name => profiles.has(name));
+}
+
+function sumFinite(values = []) {
+  const finite = values.filter(Number.isFinite);
+  return finite.length ? finite.reduce((total, value) => total + value, 0) : null;
+}
+
+function firstFinite(values = []) {
+  return values.find(Number.isFinite) ?? null;
+}
+
+function scopedTokenWindowValue(account = {}, windowName = "", field = "") {
+  const window = account.windows && account.windows[windowName] ? account.windows[windowName] : {};
+  if (field === "capacity") {
+    return firstFinite([
+      window.presented_estimated_capacity_tokens,
+      window.estimated_capacity_tokens,
+      window.latest_estimated_capacity_tokens
+    ]);
+  }
+  if (field === "remaining") {
+    return firstFinite([
+      window.presented_estimated_remaining_tokens,
+      window.estimated_remaining_tokens,
+      window.latest_estimated_remaining_tokens
+    ]);
+  }
+  if (field === "input") {
+    return firstFinite([
+      window.presented_observed_input_tokens,
+      window.observed_input_tokens,
+      window.latest_observed_input_tokens
+    ]);
+  }
+  if (field === "output") {
+    return firstFinite([
+      window.presented_observed_output_tokens,
+      window.observed_output_tokens,
+      window.latest_observed_output_tokens
+    ]);
+  }
+  return null;
+}
+
+function scopedTokenFamily(family = {}, profiles = null) {
+  if (!profiles) return family;
+  const accounts = (Array.isArray(family.accounts) ? family.accounts : [])
+    .filter(account => tokenAccountMatchesProfiles(account, profiles));
+  if (!accounts.length) return null;
+  return {
+    ...family,
+    confidence: accounts.length === 1 ? "low" : String(family.confidence || "low"),
+    account_count: accounts.length,
+    five_hour_presented_capacity_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "5h", "capacity"))),
+    five_hour_presented_remaining_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "5h", "remaining"))),
+    five_hour_presented_input_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "5h", "input"))),
+    five_hour_presented_output_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "5h", "output"))),
+    seven_day_presented_capacity_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "7d", "capacity"))),
+    seven_day_presented_remaining_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "7d", "remaining"))),
+    seven_day_presented_input_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "7d", "input"))),
+    seven_day_presented_output_tokens: sumFinite(accounts.map(account => scopedTokenWindowValue(account, "7d", "output"))),
+    presented_effective_capacity_tokens: sumFinite(accounts.map(account => firstFinite([
+      account.presented_effective_capacity_tokens,
+      account.effective_capacity_tokens,
+      account.latest_effective_capacity_tokens
+    ]))),
+    presented_effective_remaining_tokens: sumFinite(accounts.map(account => firstFinite([
+      account.presented_effective_remaining_tokens,
+      account.effective_remaining_tokens,
+      account.latest_effective_remaining_tokens
+    ])))
+  };
+}
+
+function compactTokenEstimate(report = {}, families = null, profiles = null) {
   const allowedFamilies = families ? new Set(families) : null;
+  const allowedProfiles = profiles ? new Set(Array.from(profiles).map(value => String(value || "").trim()).filter(Boolean)) : null;
   const items = (Array.isArray(report.families) ? report.families : [])
     .filter(family => !allowedFamilies || allowedFamilies.has(String(family.id || "")))
+    .map(family => scopedTokenFamily(family, allowedProfiles))
+    .filter(Boolean)
     .map(compactTokenFamily);
   return {
-    ok: Boolean(report.ok),
+    ok: Boolean(report.ok && (!allowedProfiles || items.length)),
     generated_at: report.generated_at || "",
     caveat: report.caveat || "",
     families: items
@@ -518,8 +624,14 @@ function userQuotaView(channel = {}, bundle = {}) {
       ready: Boolean(window.endpoint?.ready || window.credential_status?.bound),
       quota_available: Boolean(window.credential_status?.quota_available),
       reason: String(window.credential_status?.reason || ""),
+      profile: String(window.credential?.profile || ""),
+      name: String(window.credential?.name || ""),
       models: Array.isArray(window.credential?.models) ? window.credential.models : []
     }));
+  const visibleProfiles = new Set(visibleWindows
+    .flatMap(window => [window.profile, window.name])
+    .map(value => String(value || "").trim())
+    .filter(Boolean));
 
   const modelQuotas = allowedModels.map(model => {
     const windows = visibleWindows.map(window => {
@@ -556,7 +668,7 @@ function userQuotaView(channel = {}, bundle = {}) {
     allowed_models: allowedModels,
     target_window_ids: Array.from(targetWindows),
     model_quotas: modelQuotas,
-    token_estimate: compactTokenEstimate(bundle.token_estimate || {}, allowedFamilies),
+    token_estimate: compactTokenEstimate(bundle.token_estimate || {}, allowedFamilies, visibleProfiles),
     source: {
       quota_ok: Boolean(bundle.quota?.ok),
       account_windows_ok: Boolean(bundle.account_windows?.ok),
@@ -746,6 +858,7 @@ function policyStatus(reason = "") {
 }
 
 function policyMessage(reason = "") {
+  if (/token_rate/i.test(reason)) return "This API key has reached its per-minute token limit.";
   if (/token/i.test(reason)) return "This API key has reached its token limit.";
   if (/request/i.test(reason)) return "This API key has reached its request limit.";
   if (/rate/i.test(reason)) return "Too many requests for this API key.";
@@ -768,9 +881,11 @@ function userChannelView(channel = {}) {
     status: String(channel.status || "unknown"),
     allowed_models: Array.isArray(channel.allowed_models) ? channel.allowed_models : [],
     token_limit: channel.token_limit ?? null,
+    token_limit_per_minute: channel.token_limit_per_minute ?? null,
     request_limit: channel.request_limit ?? null,
     rate_limit_per_minute: channel.rate_limit_per_minute ?? null,
     concurrency_limit: channel.concurrency_limit ?? null,
+    window_concurrency_limit: channel.window_concurrency_limit ?? null,
     max_output_tokens: channel.max_output_tokens ?? null,
     starts_at: channel.starts_at || null,
     expires_at: channel.expires_at || null,
@@ -985,15 +1100,35 @@ async function upstreamFetchFromAllowedWindows(channel, suffix, options = {}) {
   }
   let sawClientRejection = false;
   let lastError = null;
+  let sawWindowConcurrencyLimit = false;
   for (const target of targets) {
+    const releaseWindowConcurrency = suffix === "chat/completions"
+      ? reserveWindowConcurrency(channel, target)
+      : () => {};
+    if (!releaseWindowConcurrency) {
+      sawWindowConcurrencyLimit = true;
+      continue;
+    }
+    let handedOff = false;
     try {
       const response = await upstreamFetch(upstreamWindowPath(target, suffix), options);
-      if (response.ok) return { response, windowId: target };
+      if (response.ok) {
+        handedOff = true;
+        return { response, windowId: target, releaseWindowConcurrency };
+      }
       sawClientRejection = sawClientRejection || response.status < 500;
       try { await response.body?.cancel(); } catch {}
     } catch (error) {
       lastError = error;
+    } finally {
+      if (!handedOff && releaseWindowConcurrency) releaseWindowConcurrency();
     }
+  }
+  if (sawWindowConcurrencyLimit && !lastError && !sawClientRejection) {
+    throw Object.assign(new Error("All selected upstream account windows are busy."), {
+      statusCode: 429,
+      publicMessage: "The selected account window is busy."
+    });
   }
   if (lastError && !sawClientRejection) throw lastError;
   throw Object.assign(new Error("All selected upstream account windows are unavailable."), {
@@ -1120,6 +1255,7 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
       max_output_tokens: outputTokens,
       estimated_total_tokens: outputTokens === null ? inputTokens : inputTokens + outputTokens,
       input_output_ratio: inputOutputRatio(inputTokens, outputTokens),
+      token_limit_per_minute: inspection.channel.token_limit_per_minute ?? null,
       characters: text.length
     });
   }
@@ -1209,12 +1345,15 @@ async function handleExternalChat(req, res, accessId) {
     });
   };
 
+  let releaseWindowConcurrency = () => {};
   try {
-    const { response: upstream } = await upstreamFetchFromAllowedWindows(reserved.channel, "chat/completions", {
+    const upstreamResult = await upstreamFetchFromAllowedWindows(reserved.channel, "chat/completions", {
       method: "POST",
       body: JSON.stringify(body),
       accept: body.stream ? "text/event-stream" : "application/json"
     });
+    const upstream = upstreamResult.response;
+    releaseWindowConcurrency = upstreamResult.releaseWindowConcurrency || releaseWindowConcurrency;
     if (body.stream) {
       const streamed = await pipeSse(res, upstream);
       settle({
@@ -1244,6 +1383,8 @@ async function handleExternalChat(req, res, accessId) {
   } catch (error) {
     settle({ outputTokens: 0, status: "upstream_error" });
     return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
+  } finally {
+    releaseWindowConcurrency();
   }
 }
 
