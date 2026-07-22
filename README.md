@@ -135,17 +135,33 @@ GATEWAY_USER_BASE_URL=https://api.example.com
 
 ```powershell
 npm install
-$env:PORT = "3000"
-$env:GATEWAY_ADMIN_KEY = "change-this-before-use"
-$env:GATEWAY_ADMIN_BASE_URL = "http://127.0.0.1:3000"
-$env:GATEWAY_USER_BASE_URL = "http://127.0.0.1:3000"
-$env:UPSTREAM_BRIDGE_URL = "https://your-original-bridge.example"
-$env:UPSTREAM_BRIDGE_API_KEY = "your-upstream-key"
-$env:GATEWAY_DATA_DIR = ".\\data"
-npm start
+.\start-local.bat
 ```
 
-生产环境请使用 Render Secret，不要把这类变量保存进仓库。测试命令：
+本地固定入口：
+
+```text
+管理员网页：http://127.0.0.1:3000/?key=local-admin-key
+用户/API 基础网址：http://127.0.0.1:3000
+```
+
+Windows 也可以直接双击项目根目录里的：
+
+```text
+start-local.bat
+```
+
+它会自动设置本地端口、管理员 Key 和固定网页地址，然后打开管理网页。命令窗口需要保持打开；关闭窗口后本地网站就会停止。所有通道创建、随机填满、Key 保存和统计查看都在网页里完成。
+
+如果要在本地读取真实的 w1/w2 账号窗口，请在运行前额外设置上游变量：
+
+```powershell
+$env:UPSTREAM_BRIDGE_URL = "https://your-original-bridge.example"
+$env:UPSTREAM_BRIDGE_API_KEY = "your-upstream-key"
+.\start-local.bat
+```
+
+生产环境请使用 Render Secret，不要把上游变量保存进仓库。测试命令：
 
 ```powershell
 npm test
