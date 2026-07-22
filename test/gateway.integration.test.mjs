@@ -216,6 +216,7 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(userPage.includes("ACCESS CONSOLE"), true);
   assert.equal(userPage.includes("GATEWAY_ADMIN_KEY"), false);
   assert.equal((await adminRequest(userPortalPath)).status, 404);
+  const adminHome = await (await adminRequest("/")).text();
   const adminScript = await (await adminRequest("/assets/app.js")).text();
   const userScript = await (await userRequest("/assets/user.js")).text();
   const userCss = await (await userRequest("/assets/user.css")).text();
@@ -226,6 +227,10 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(adminScript.includes("copy-saved-key"), true);
   assert.equal(adminScript.includes("randomApiKey"), true);
   assert.equal(adminScript.includes("updateCreateEndpointPreview"), true);
+  assert.equal(adminScript.includes("backupDocument"), true);
+  assert.equal(adminScript.includes("importFriendBackupText"), true);
+  assert.equal(adminHome.includes("复制全部配置"), true);
+  assert.equal(adminHome.includes("导入恢复"), true);
   assert.equal(userScript.includes("api_key"), true);
   assert.equal(userScript.includes("clearSensitiveQuery"), true);
   assert.equal(userCss.includes("[hidden]"), true);

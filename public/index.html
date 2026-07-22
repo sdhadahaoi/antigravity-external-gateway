@@ -156,7 +156,13 @@
               <h2 id="channelsTitle">朋友信息列表</h2>
               <p class="muted">每个朋友会保留独立名称、用户控制台地址、API 地址、API Key 状态和用量。</p>
             </div>
-            <button class="button button-quiet" id="refreshOverview" type="button">刷新</button>
+            <div class="section-actions">
+              <button class="button button-quiet" id="copyAllFriendBackups" type="button">复制全部配置</button>
+              <button class="button button-quiet" id="downloadAllFriendBackups" type="button">下载备份</button>
+              <button class="button button-quiet" id="importFriendBackups" type="button">导入恢复</button>
+              <button class="button button-quiet" id="refreshOverview" type="button">刷新</button>
+            </div>
+            <input id="friendBackupFile" type="file" accept="application/json,.json,.txt" hidden>
           </div>
           <div id="channelsList" class="channel-list" aria-live="polite">
             <div class="empty-state">输入管理密钥后可查看并管理多个朋友的信息、地址和 API Key。</div>
@@ -231,6 +237,7 @@
         <div class="secret-value"><code id="rawApiKey"></code></div>
         <div class="modal-actions">
           <button class="button button-primary" id="copyRawApiKey" type="button">复制 API Key</button>
+          <button class="button button-quiet" id="copyModalFriendBackup" type="button">复制此朋友完整配置</button>
           <button class="button button-quiet" id="closeKeyModal" type="button">我已保存</button>
         </div>
         <div class="modal-endpoint">

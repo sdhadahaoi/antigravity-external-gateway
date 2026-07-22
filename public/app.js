@@ -10,6 +10,7 @@
     publicBaseUrl: "",
     userBaseUrl: "",
     loading: false,
+    modalChannel: null,
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -32,6 +33,7 @@
     createEndpointPreview: $("#createEndpointPreview"),
     createMessage: $("#createMessage"),
     channelsList: $("#channelsList"),
+    friendBackupFile: $("#friendBackupFile"),
     logChannel: $("#logChannel"),
     logLimit: $("#logLimit"),
     logsBody: $("#logsBody"),
@@ -425,6 +427,7 @@
         "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span></div>" +
       "</div>" +
       "<div class=\"channel-actions\">" +
+        "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"edit\">编辑</button>" +
         "<button class=\"button " + (enabled ? "button-warning\" data-action=\"toggle\">停用" : "button-quiet\" data-action=\"toggle\">启用") + "</button>" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"rotate\">轮换 Key</button>" +
@@ -470,6 +473,173 @@
     }
 
     configureForms();
+  }
+
+  function backupChannel(channel) {
+    const savedKey = savedApiKeyFor(channel);
+    const backup = {
+      label: pick(channel, ["label", "name"], ""),
+      access_slug: accessSlugFor(channel),
+      api_key: savedKey || null,
+      target_window_id: channelValue(channel, ["target_window_id", "account_id", "window_id"], ""),
+      allowed_models: channelAllowedModels(channel),
+      starts_at: channelValue(channel, ["starts_at", "startsAt"], null),
+      expires_at: channelValue(channel, ["expires_at", "expiresAt"], null),
+      enabled: channelEnabled(channel),
+      friend_portal_url: friendPortalFor(channel),
+      api_base_url: endpointFor(channel),
+      exported_without_api_key: !savedKey,
+    };
+
+    ["token_limit", "request_limit", "rate_limit_per_minute", "concurrency_limit", "max_output_tokens"].forEach((name) => {
+      const value = channelValue(channel, [name], undefined);
+      if (value !== undefined && value !== null && value !== "") backup[name] = value;
+    });
+    return backup;
+  }
+
+  function backupDocument(channels) {
+    const friends = (channels || state.channels || []).map(backupChannel);
+    return {
+      type: "antigravity-external-gateway.friend-backup",
+      version: 1,
+      exported_at: new Date().toISOString(),
+      user_base_url: userBaseUrl(),
+      note: "敏感备份：包含朋友 API Key 时，请只由管理员保存。导入后可恢复相同用户地址和相同 API Key。",
+      friends,
+    };
+  }
+
+  function backupText(channels) {
+    return JSON.stringify(backupDocument(channels), null, 2);
+  }
+
+  function missingBackupKeyCount(channels) {
+    return (channels || []).filter((channel) => !savedApiKeyFor(channel)).length;
+  }
+
+  function backupWarning(channels) {
+    const missing = missingBackupKeyCount(channels);
+    return missing ? "其中 " + missing + " 个朋友缺少完整 API Key，只能备份地址和配置，不能原样恢复 Key。" : "";
+  }
+
+  async function copyChannelBackup(channel) {
+    await copyText(backupText([channel]), "已复制这个朋友的配置备份。");
+    const warning = backupWarning([channel]);
+    if (warning) showToast(warning, "error");
+  }
+
+  async function copyAllFriendBackups() {
+    if (!state.channels.length) {
+      showToast("还没有朋友配置可导出。", "error");
+      return;
+    }
+    await copyText(backupText(state.channels), "已复制全部朋友配置备份。");
+    const warning = backupWarning(state.channels);
+    if (warning) showToast(warning, "error");
+  }
+
+  function downloadAllFriendBackups() {
+    if (!state.channels.length) {
+      showToast("还没有朋友配置可下载。", "error");
+      return;
+    }
+    const blob = new Blob([backupText(state.channels)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    link.href = url;
+    link.download = "antigravity-friend-backup-" + stamp + ".json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    const warning = backupWarning(state.channels);
+    showToast(warning || "已下载全部朋友配置备份。", warning ? "error" : "");
+  }
+
+  function normalizeImportedFriends(parsed) {
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.friends)) return parsed.friends;
+    if (parsed && Array.isArray(parsed.channels)) return parsed.channels;
+    if (parsed && typeof parsed === "object" && (parsed.access_slug || parsed.api_key)) return [parsed];
+    throw new Error("备份格式不正确：需要包含 friends 数组。");
+  }
+
+  function importPayloadForFriend(friend) {
+    const label = String(friend.label || friend.name || "").trim();
+    const accessSlug = accessSlugOrNull(friend.access_slug || friend.accessSlug);
+    const apiKey = valueOrNull(friend.api_key || friend.apiKey);
+    const targetWindow = String(friend.target_window_id || friend.window_id || friend.account_id || "").trim();
+    const allowedModels = Array.isArray(friend.allowed_models)
+      ? friend.allowed_models.map(String).filter(Boolean)
+      : String(friend.allowed_models || friend.models || "").split(",").map((item) => item.trim()).filter(Boolean);
+
+    if (!accessSlug) throw new Error("备份缺少用户地址标识。");
+    if (!apiKey) throw new Error("备份缺少完整 API Key，不能原样恢复这个朋友。");
+    if (!targetWindow) throw new Error("备份缺少指定凭证窗口。");
+    if (!allowedModels.length) throw new Error("备份缺少允许模型。");
+
+    const payload = {
+      label: label || "朋友-" + accessSlug,
+      access_slug: accessSlug,
+      api_key: apiKey,
+      target_window_id: targetWindow,
+      allowed_models: allowedModels,
+      starts_at: valueOrNull(friend.starts_at || friend.startsAt),
+      expires_at: valueOrNull(friend.expires_at || friend.expiresAt),
+      enabled: friend.enabled !== false,
+    };
+
+    ["token_limit", "request_limit", "rate_limit_per_minute", "concurrency_limit", "max_output_tokens"].forEach((name) => {
+      if (friend[name] !== undefined && friend[name] !== null && friend[name] !== "") payload[name] = friend[name];
+    });
+    return payload;
+  }
+
+  async function importFriendBackupText(text) {
+    const parsed = JSON.parse(text);
+    const friends = normalizeImportedFriends(parsed);
+    if (!friends.length) throw new Error("备份里没有朋友配置。");
+    if (!window.confirm("将导入 " + friends.length + " 个朋友配置。已有相同短地址的朋友会跳过。继续吗？")) return;
+
+    const existingSlugs = new Set((state.channels || []).map(accessSlugFor).filter(Boolean));
+    let created = 0;
+    let skipped = 0;
+    const failures = [];
+    for (const friend of friends) {
+      try {
+        const payload = importPayloadForFriend(friend);
+        if (existingSlugs.has(payload.access_slug)) {
+          skipped += 1;
+          continue;
+        }
+        const result = await api("/api/admin/channels", { method: "POST", body: JSON.stringify(payload) });
+        rememberApiKey(result.channel || payload, result.api_key || payload.api_key);
+        existingSlugs.add(payload.access_slug);
+        created += 1;
+      } catch (error) {
+        failures.push(asErrorMessage(error, "导入失败"));
+      }
+    }
+
+    await loadOverview();
+    const message = "导入完成：恢复 " + created + " 个，跳过 " + skipped + " 个" + (failures.length ? "，失败 " + failures.length + " 个。" : "。");
+    showToast(message, failures.length ? "error" : "");
+    if (failures.length) {
+      setMessage(elements.adminMessage, message + " " + failures.slice(0, 3).join("；"), "error");
+    }
+  }
+
+  async function importFriendBackupFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      await importFriendBackupText(await file.text());
+    } catch (error) {
+      showToast(asErrorMessage(error, "导入失败。"), "error");
+    }
   }
 
   async function loadOverview(showFeedback) {
@@ -667,6 +837,7 @@
 
   function showRawKey(apiKey, channel) {
     if (apiKey) rememberApiKey(channel || {}, apiKey);
+    state.modalChannel = channel || null;
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
     elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
@@ -912,6 +1083,10 @@
       if (event.key === "Enter") $("#saveAdminKey").click();
     });
     $("#refreshOverview").addEventListener("click", () => loadOverview(true));
+    $("#copyAllFriendBackups").addEventListener("click", copyAllFriendBackups);
+    $("#downloadAllFriendBackups").addEventListener("click", downloadAllFriendBackups);
+    $("#importFriendBackups").addEventListener("click", () => elements.friendBackupFile.click());
+    elements.friendBackupFile.addEventListener("change", importFriendBackupFile);
     $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.userBaseUrl, "已复制外接 API 地址。"));
     $("#randomizeCreateForm").addEventListener("click", () => {
       fillCreateFormRandomly();
@@ -940,6 +1115,13 @@
       elements.estimateCharacters.textContent = elements.estimateText.value.length + " 个字符";
     });
     $("#copyRawApiKey").addEventListener("click", () => copyText(elements.rawApiKey.textContent, "已复制 API Key。"));
+    $("#copyModalFriendBackup").addEventListener("click", () => {
+      if (!state.modalChannel) {
+        showToast("没有可复制的朋友配置。", "error");
+        return;
+      }
+      copyChannelBackup(state.modalChannel);
+    });
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
     $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制用户控制台地址。"));
     const copyModalLoginEndpoint = $("#copyModalLoginEndpoint");
@@ -960,6 +1142,7 @@
       if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制用户控制台地址。");
       if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
       if (action.dataset.action === "copy-login") copyText(appendKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录统计页。");
+      if (action.dataset.action === "copy-config") copyChannelBackup(channel);
       if (action.dataset.action === "forget-saved-key") {
         forgetApiKey(channel);
         renderOverview(state.overview || {});

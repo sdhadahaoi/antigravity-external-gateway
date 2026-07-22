@@ -62,6 +62,8 @@ https://api.example.com/u/<朋友专属短地址>/v1
 
 管理页右侧会保留并显示多个朋友的信息。每个朋友对应一张卡片，包含朋友名称、指定凭证窗口、完整用户控制台地址、完整 API Base URL、API Key 状态、用量和操作按钮。朋友配置、地址标识、用量和日志会保存在服务端数据目录；完整 API Key 不会在服务端明文保存，只会在创建/轮换时返回一次，并由当前管理员浏览器本地保存，方便同一台电脑继续复制给朋友。如果换电脑或清空浏览器数据，可以对该朋友执行“轮换 Key”生成新的完整 Key。
 
+如果部署在 Render Free，必须把朋友配置备份当成“保命包”：创建弹窗里有“复制此朋友完整配置”，朋友列表顶部有“复制全部配置 / 下载备份 / 导入恢复”。备份 JSON 会包含朋友短地址和完整 `agk_...` API Key；Render Free 重启导致本地数据丢失后，使用“导入恢复”即可重新创建同样短地址和同样 Key，朋友原来的 API Base URL 与 API Key 就能继续使用。这个备份包含敏感 Key，只能由管理员自己保存。
+
 这里的“随机虚拟端点”指的是朋友专属短地址，例如 `/u/u_rm43p3oyjapo2jdl/`。整站域名必须来自 Render 默认域名或你已经绑定的自定义域名，不能随机生成一个互联网上真实可访问的新域名。管理网页点“随机填满”会先生成一套可提交的随机配置；点“创建并保存”后，这套朋友短地址和 API Key 才会真正保存并可登录。管理弹窗会同时给出朋友控制台、完整 API Base URL，以及可选的“一键登录统计页”链接。
 
 ## 两套界面
@@ -92,7 +94,7 @@ https://api.example.com/u/<朋友专属短地址>/v1
 | `GATEWAY_ADMIN_KEY` | 管理界面/API 的管理员密钥 | Render Blueprint 会随机生成；可在控制台轮换 |
 | `UPSTREAM_BRIDGE_URL` | 原 `zeabur-antigravity-bridge` 的完整基础 URL | Render Secret，例：`https://...onrender.com` |
 | `UPSTREAM_BRIDGE_API_KEY` | 原 bridge 所需的 API Key | Render Secret，绝不提交 |
-| `GATEWAY_DATA_DIR` | 网关状态、配额和日志数据目录 | Render 中设为 `/var/data` |
+| `GATEWAY_DATA_DIR` | 网关状态、配额和日志数据目录 | Render Free 中设为 `/tmp/gateway-data`；会随重启丢失，需用网页备份恢复 |
 | `GATEWAY_ADMIN_BASE_URL` | 管理员界面的公开基础 URL | 生产环境填写 `https://admin.example.com` |
 | `GATEWAY_USER_BASE_URL` | 用户门户和外接 API 的公开基础 URL | 生产环境填写 `https://api.example.com`；新建通道的门户/API 地址由此生成 |
 | `GATEWAY_PUBLIC_BASE_URL` | 旧版单一公开基础 URL 的兼容回退 | 新部署不建议设置；仅在尚未拆分域名的旧部署中使用 |
@@ -111,11 +113,18 @@ URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` �
 4. 部署完成后，先用管理员 Key 进入管理界面，创建一个低配额、短有效期的测试 Key，再测试转发和日志。
 5. 只把生成的虚拟端点和该朋友自己的外接 Key 发给朋友；不要发送 Render Dashboard、原服务 URL、管理员 Key 或任何 OAuth 信息。
 
-### 持久化要求
+### Render Free 数据保存方式
 
-外接 Key、token 用量、频率计数和使用日志需要跨重启保留。`render.yaml` 已挂载 `/var/data` Persistent Disk，并将 `GATEWAY_DATA_DIR` 指向它。
+当前 `render.yaml` 默认使用 Render Free，不挂载 Persistent Disk，并将 `GATEWAY_DATA_DIR` 指向 `/tmp/gateway-data`。API 在服务运行期间可以正常使用；但 Render Free 重启、休眠唤醒或重新部署后，本地朋友配置、Key hash、统计和日志可能丢失。
 
-不要使用 Render Free 的临时文件系统保存这些数据：重启、重新部署或实例替换会导致配额与日志丢失。挂载磁盘的 Render 计划通常需要付费实例；如改用托管数据库，也必须把网关状态迁移到数据库后再移除磁盘。
+为了不影响朋友继续使用，同一个朋友的用户地址和 API Key 必须提前导出备份。推荐习惯：
+
+1. 每次创建或轮换朋友 Key 后，马上点弹窗里的“复制此朋友完整配置”；
+2. 创建多个朋友后，点朋友列表顶部的“下载备份”；
+3. 如果 Render Free 重启后朋友列表变空，登录管理页，点“导入恢复”，选择备份 JSON；
+4. 恢复完成后，原来的 `https://.../u/<短地址>/v1` 和 `agk_...` Key 会重新生效。
+
+如果以后需要自动长期保存统计和日志，可升级带 Persistent Disk 的实例，或改接 Supabase/Neon 等外部数据库。
 
 ### 双自定义域名
 

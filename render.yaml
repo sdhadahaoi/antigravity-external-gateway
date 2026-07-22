@@ -2,13 +2,9 @@ services:
   - type: web
     runtime: node
     name: antigravity-external-gateway
-    plan: starter
+    plan: free
     buildCommand: npm install
     startCommand: npm start
-    disk:
-      name: gateway-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       # Render injects PORT for web services. Keep this unsynced when using a Blueprint.
       - key: PORT
@@ -21,9 +17,10 @@ services:
         sync: false
       - key: UPSTREAM_BRIDGE_API_KEY
         sync: false
-      # Gateway state must live on the persistent disk, not the ephemeral service filesystem.
+      # Free services have ephemeral filesystems. Use the dashboard backup/export
+      # buttons to preserve friend URLs and API keys across restarts.
       - key: GATEWAY_DATA_DIR
-        value: /var/data
+        value: /tmp/gateway-data
       # Public address for the administrator-only surface, e.g. https://admin.example.com.
       - key: GATEWAY_ADMIN_BASE_URL
         sync: false

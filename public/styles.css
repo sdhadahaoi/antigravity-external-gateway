@@ -138,6 +138,7 @@ h2 { font-size: 16px; line-height: 1.25; font-weight: 700; letter-spacing: 0; }
 .compact-heading { align-items: center; }
 .muted, .panel-note { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .panel-note { white-space: nowrap; color: var(--warning); }
+.section-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 
 .admin-key-row { display: flex; gap: 8px; }
 
@@ -434,6 +435,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .app-shell { width: min(100% - 20px, 1480px); padding-top: 16px; }
   .topbar, .compact-heading, .section-heading { align-items: flex-start; flex-direction: column; }
   .upstream-state { align-self: flex-start; }
+  .section-actions { justify-content: flex-start; }
   .admin-key-row { flex-wrap: wrap; }
   .admin-key-row input { flex-basis: 100%; }
   .quick-guide { grid-template-columns: 1fr; }
