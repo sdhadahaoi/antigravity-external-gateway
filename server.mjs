@@ -507,10 +507,15 @@ function userLogView(entry = {}) {
 
 // Hide internal admission-control rows and background model-discovery polls.
 // Keep real outcomes and administrator actions (for example key rotation or
-// revocation) visible in the dashboard.
-function visibleUsageLog(entry = {}) {
+// revocation) visible in the administrator dashboard.
+function visibleAdminLog(entry = {}) {
   return entry.event !== "reserved"
     && entry.event !== "reservation_expired"
+    && entry.model !== "models";
+}
+
+function visibleUserUsageLog(entry = {}) {
+  return (entry.event === "settled" || entry.event === "rejected")
     && entry.model !== "models";
 }
 
@@ -741,8 +746,7 @@ async function handleAdmin(req, res, url) {
     const channelId = String(url.searchParams.get("channel_id") || "").trim();
     const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit") || 200)));
     const logs = store.getLogs({ channelId, limit: Math.min(1000, limit * 4) })
-      .filter(visibleUsageLog)
-      .filter(entry => entry.model !== "models")
+      .filter(visibleAdminLog)
       .slice(0, limit);
     return sendJson(res, 200, { ok: true, logs });
   }
@@ -790,8 +794,7 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
   if (resource === "logs" && req.method === "GET") {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
     const logs = store.getLogs(accessId, { limit: Math.min(1000, limit * 4) })
-      .filter(visibleUsageLog)
-      .filter(entry => entry.model !== "models")
+      .filter(visibleUserUsageLog)
       .slice(0, limit)
       .map(userLogView);
     return sendJson(res, 200, {
