@@ -88,7 +88,7 @@ test('accepts administrator-provided random API keys without persisting raw keys
 
 test('supports unique custom access slugs and resolves them across channel operations', (t) => {
   const { store } = makeStore(t);
-  const first = store.create({ access_slug: 'friend-alpha_01' });
+  const first = store.create({ access_slug: 'friend-alpha_01', allowed_models: ['any'] });
   const second = store.create({ access_slug: 'friend-beta-02' });
   const reservedName = store.create({ access_slug: 'constructor' });
 
@@ -123,6 +123,20 @@ test('supports unique custom access slugs and resolves them across channel opera
   assert.throws(() => store.update(second.channel.id, { access_slug: 'friend-renamed_03' }), /access_slug is already in use/);
   assert.throws(() => store.create({ access_slug: 'ab' }), /between 3 and 64 characters/);
   assert.throws(() => store.create({ access_slug: 'Friend-Alpha' }), /must start with a lowercase letter or number/);
+});
+
+test('does not allow any chat model when no allowed models are configured', (t) => {
+  const { store } = makeStore(t);
+  const created = store.create({ label: 'No model allowlist' });
+  const reservation = store.checkAndReserve({
+    id: created.channel.id,
+    apiKey: created.apiKey,
+    model: 'gemini-3-5-flash-high-ag',
+    estimatedTokens: 10,
+  });
+
+  assert.equal(reservation.ok, false);
+  assert.equal(reservation.reason, 'model_not_allowed');
 });
 
 test('migrates legacy channel records with a persistent random access slug', (t) => {
@@ -203,6 +217,7 @@ test('reserves quota before upstream work, settles actual use, and enforces poli
 test('enforces request rate and lifespan and releases expired reservations', (t) => {
   const { store } = makeStore(t);
   const created = store.create({
+    allowed_models: ['any'],
     rate_limit_per_minute: 1,
     request_limit: 2,
     starts_at: 10_000,
