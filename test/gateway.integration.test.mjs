@@ -191,6 +191,16 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(JSON.stringify(overview).includes(`127.0.0.1:${upstreamPort}`), false);
   assert.equal(JSON.stringify(overview).includes(expectedUpstreamKey), false);
 
+  const noAllowedModels = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "missing model allowlist",
+      target_window_id: "w1"
+    })
+  });
+  assert.equal(noAllowedModels.status, 400);
+
   const createdResponse = await adminRequest("/api/admin/channels", {
     method: "POST",
     headers: adminHeaders,
