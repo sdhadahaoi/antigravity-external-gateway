@@ -338,6 +338,18 @@ progress.unlimited { opacity: 0.4; }
 }
 
 .oauth-quota-panel { margin-top: 12px; }
+.quota-subtoolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.quota-subtitle {
+  color: var(--muted);
+  font-size: 12px;
+}
 .quota-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 .quota-toolbar label { color: var(--subtle); font-size: 11px; }
 .quota-toolbar select { width: auto; min-width: 86px; min-height: 32px; padding: 5px 8px; font-size: 11px; }
