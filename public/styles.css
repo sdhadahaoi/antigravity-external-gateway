@@ -396,6 +396,43 @@ tbody tr:last-child td { border-bottom: 0; }
 .estimate-result { min-height: 42px; margin-top: 13px; padding: 10px; border: 1px solid #2c4d49; border-radius: 5px; color: #afece2; background: #132a29; font-size: 12px; line-height: 1.55; }
 .estimate-result.error { color: #ffb5b2; border-color: #683d43; background: #2c1b20; }
 
+.oauth-quota-panel { min-height: 100%; }
+.quota-result { display: grid; gap: 10px; color: var(--muted); font-size: 12px; }
+.quota-model-grid,
+.quota-family-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.quota-mini-card {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 11px;
+  background: #11191f;
+}
+.quota-mini-card h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.quota-mini-card p { margin: 4px 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.quota-mini-card strong { color: #cafff4; }
+.quota-window-list { display: grid; gap: 5px; margin-top: 8px; }
+.quota-window {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 5px;
+  color: var(--subtle);
+  font-size: 11px;
+}
+.quota-window.ok strong { color: #aef2c9; }
+.quota-window.warn strong { color: #ffe0a0; }
+.quota-window.bad strong { color: #ffb2ae; }
+
 .modal-backdrop {
   position: fixed;
   z-index: 20;
