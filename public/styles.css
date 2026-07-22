@@ -162,6 +162,20 @@ h2 { font-size: 16px; line-height: 1.25; font-weight: 700; letter-spacing: 0; }
   min-height: 32px;
   padding-block: 6px;
 }
+.limit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.unit-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+  margin-top: 6px;
+}
+.unit-input select {
+  min-height: 36px;
+}
 .duration-presets {
   display: flex;
   flex: 1 1 100%;
