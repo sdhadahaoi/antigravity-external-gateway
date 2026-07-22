@@ -244,7 +244,7 @@
     const limitNumber = Math.max(0, number(limit));
     const percent = hasLimit && limitNumber > 0 ? Math.min(100, Math.round((usedNumber / limitNumber) * 100)) : 0;
 
-    const displayNumber = prefix === "token" ? formatScaledNumber : formatNumber;
+    const displayNumber = prefix === "token" || prefix === "tokenRate" ? formatScaledNumber : formatNumber;
     value.textContent = displayNumber(usedNumber) + " / " + (hasLimit ? displayNumber(limitNumber) : "不限");
     note.textContent = hasLimit ? "剩余 " + displayNumber(Math.max(0, number(remaining))) : "未设置上限";
     meter.max = 100;
@@ -298,6 +298,7 @@
     quota("token", usage.total_tokens, channel.token_limit, remaining.tokens);
     quota("request", usage.total_requests, channel.request_limit, remaining.requests);
     quota("rate", usage.requests_last_minute, channel.rate_limit_per_minute, remaining.requests_this_minute);
+    quota("tokenRate", usage.tokens_last_minute, channel.token_limit_per_minute, remaining.tokens_this_minute);
     quota("concurrency", usage.active_requests, channel.concurrency_limit, remaining.concurrent_requests);
     renderAllowedModels(channel.allowed_models);
 
