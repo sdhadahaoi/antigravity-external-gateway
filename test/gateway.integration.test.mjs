@@ -246,6 +246,20 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal((await userRequest("/assets/user.js")).status, 200);
   assert.equal((await userRequest("/assets/user.css")).status, 200);
 
+  const ownerModelsOnUserHost = await userRequest("/v1/models", {
+    headers: { authorization: `Bearer ${expectedUpstreamKey}` }
+  });
+  assert.equal(ownerModelsOnUserHost.status, 200);
+  assert.deepEqual((await ownerModelsOnUserHost.json()).data.map(item => item.id), ["claude-sonnet-4-6-thinking-ag", "gemini-3-5-flash-medium-ag"]);
+  const ownerModelsOnUnknownHost = await rawHttpRequest(origin, "/v1/models", {
+    headers: { host: "original-render-host.gateway.test", authorization: `Bearer ${expectedUpstreamKey}` }
+  });
+  assert.equal(ownerModelsOnUnknownHost.status, 200);
+  const nonOwnerModelsOnUnknownHost = await rawHttpRequest(origin, "/v1/models", {
+    headers: { host: "original-render-host.gateway.test", authorization: "Bearer agk_friend_key_is_not_owner" }
+  });
+  assert.equal(nonOwnerModelsOnUnknownHost.status, 401);
+
   const externalHeaders = { authorization: `Bearer ${created.api_key}`, "content-type": "application/json" };
   const invalidExternalHeaders = { authorization: "Bearer agk_invalid_external_key", "content-type": "application/json" };
   const unknownSlug = "unassigned-channel-9x";
@@ -447,5 +461,5 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(disabledChat.status, 403);
   assert.ok(seen.some(entry => entry.path === "/windows/w1/v1/chat/completions"));
   assert.ok(seen.every(entry => entry.auth === `Bearer ${expectedUpstreamKey}`));
-  assert.equal((await userRequest("/v1/models", { headers: externalHeaders })).status, 404);
+  assert.equal((await userRequest("/v1/models", { headers: externalHeaders })).status, 401);
 });

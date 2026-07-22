@@ -47,6 +47,14 @@ function adminAuthorized(req) {
   return Boolean(ADMIN_KEY && safeEqual(bearerToken(req), ADMIN_KEY));
 }
 
+function ownerAuthorized(req) {
+  const token = bearerToken(req);
+  return Boolean(
+    (ADMIN_KEY && safeEqual(token, ADMIN_KEY))
+    || (UPSTREAM_API_KEY && safeEqual(token, UPSTREAM_API_KEY))
+  );
+}
+
 function requestOrigin(req) {
   const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() || (req.socket.encrypted ? "https" : "http");
   const host = String(req.headers["x-forwarded-host"] || req.headers.host || `localhost:${PORT}`).split(",")[0].trim();
@@ -198,7 +206,7 @@ async function upstreamFetch(pathname, options = {}) {
       headers: {
         authorization: `Bearer ${UPSTREAM_API_KEY}`,
         accept: options.accept || "application/json",
-        ...(options.body ? { "content-type": "application/json" } : {})
+        ...(options.body ? { "content-type": options.contentType || "application/json" } : {})
       },
       body: options.body,
       signal: controller.signal
@@ -523,6 +531,50 @@ function payloadTargetWindowIds(payload = {}) {
   return targets;
 }
 
+async function sendUpstreamResponse(res, upstreamResponse) {
+  const headers = {
+    "content-type": upstreamResponse.headers.get("content-type") || "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  };
+  const isStream = String(headers["content-type"]).toLowerCase().includes("text/event-stream");
+  if (isStream && upstreamResponse.body) {
+    res.writeHead(upstreamResponse.status, {
+      ...headers,
+      "connection": "keep-alive",
+      "x-accel-buffering": "no"
+    });
+    for await (const chunk of Readable.fromWeb(upstreamResponse.body)) {
+      if (res.destroyed || res.writableEnded) break;
+      if (!res.write(chunk)) await waitForDrain(res);
+    }
+    if (!res.writableEnded && !res.destroyed) res.end();
+    return;
+  }
+  const body = Buffer.from(await upstreamResponse.arrayBuffer());
+  send(res, upstreamResponse.status, headers["content-type"], body);
+}
+
+async function handleOwnerOpenAiPassthrough(req, res, url) {
+  if (!ownerAuthorized(req)) return apiError(res, 401, "Unauthorized.", "unauthorized");
+  if (url.pathname === "/v1/models" && req.method === "GET") {
+    const upstream = await upstreamFetch("/v1/models");
+    return sendUpstreamResponse(res, upstream);
+  }
+  if (url.pathname === "/v1/chat/completions" && req.method === "POST") {
+    const body = await readBody(req);
+    const contentType = String(req.headers["content-type"] || "");
+    const upstream = await upstreamFetch("/v1/chat/completions", {
+      method: "POST",
+      body,
+      accept: String(req.headers.accept || "").includes("text/event-stream") ? "text/event-stream" : "application/json",
+      contentType: contentType || "application/json"
+    });
+    return sendUpstreamResponse(res, upstream);
+  }
+  return apiError(res, 404, "Not found.", "not_found");
+}
+
 async function validateChannelTargets(payload = {}) {
   const targets = payloadTargetWindowIds(payload);
   if (!targets.length) throw Object.assign(new Error("Select at least one upstream account window."), { statusCode: 400 });
@@ -821,6 +873,9 @@ async function route(req, res) {
   // Render health checks are allowed on either custom domain and the service
   // hostname. Every other endpoint is limited to its configured surface.
   if (url.pathname === "/health") return sendJson(res, 200, { ok: true, service: "antigravity-external-gateway" });
+  if (url.pathname === "/v1/models" || url.pathname === "/v1/chat/completions") {
+    return handleOwnerOpenAiPassthrough(req, res, url);
+  }
   if (surface === "unknown") return sendJson(res, 404, { ok: false, message: "Not found." });
   if (req.method === "OPTIONS") {
     res.writeHead(204, { allow: "GET,POST,PATCH,DELETE,OPTIONS", "cache-control": "no-store" });
