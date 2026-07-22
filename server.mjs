@@ -290,9 +290,16 @@ function messageText(messages) {
 }
 
 function requestedOutputTokens(body, channel) {
-  const requested = Number(body.max_tokens ?? body.max_completion_tokens ?? body.maxOutputTokens);
-  const policyMax = Math.max(1, Number(channel.max_output_tokens || 4096));
-  const normalized = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : policyMax;
+  const supplied = body.max_tokens ?? body.max_completion_tokens ?? body.maxOutputTokens;
+  const requested = Number(supplied);
+  const hasRequested = supplied !== undefined && supplied !== null && supplied !== "" && Number.isFinite(requested) && requested > 0;
+  const policyMax = channel.max_output_tokens === null || channel.max_output_tokens === undefined
+    ? null
+    : Math.max(1, Number(channel.max_output_tokens));
+  if (policyMax === null) {
+    return hasRequested ? Math.floor(requested) : null;
+  }
+  const normalized = hasRequested ? Math.floor(requested) : policyMax;
   return Math.max(1, Math.min(policyMax, normalized));
 }
 
@@ -496,6 +503,15 @@ function userLogView(entry = {}) {
     if (entry[field] !== undefined) view[field] = entry[field];
   }
   return view;
+}
+
+// Hide internal admission-control rows and background model-discovery polls.
+// Keep real outcomes and administrator actions (for example key rotation or
+// revocation) visible in the dashboard.
+function visibleUsageLog(entry = {}) {
+  return entry.event !== "reserved"
+    && entry.event !== "reservation_expired"
+    && entry.model !== "models";
 }
 
 function inspectUserChannel(req, accessId, res) {
@@ -724,7 +740,11 @@ async function handleAdmin(req, res, url) {
   if (pathname === "/api/admin/logs" && req.method === "GET") {
     const channelId = String(url.searchParams.get("channel_id") || "").trim();
     const limit = Math.max(1, Math.min(1000, Number(url.searchParams.get("limit") || 200)));
-    return sendJson(res, 200, { ok: true, logs: store.getLogs({ channelId, limit }) });
+    const logs = store.getLogs({ channelId, limit: Math.min(1000, limit * 4) })
+      .filter(visibleUsageLog)
+      .filter(entry => entry.model !== "models")
+      .slice(0, limit);
+    return sendJson(res, 200, { ok: true, logs });
   }
   const match = pathname.match(/^\/api\/admin\/channels\/([^/]+)(?:\/(rotate|test))?$/);
   if (!match) return adminError(res, 404, "Not found.");
@@ -769,9 +789,14 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
   }
   if (resource === "logs" && req.method === "GET") {
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") || 50)));
+    const logs = store.getLogs(accessId, { limit: Math.min(1000, limit * 4) })
+      .filter(visibleUsageLog)
+      .filter(entry => entry.model !== "models")
+      .slice(0, limit)
+      .map(userLogView);
     return sendJson(res, 200, {
       ok: true,
-      logs: store.getLogs(accessId, { limit }).map(userLogView)
+      logs
     });
   }
   if (resource === "token-estimate" && req.method === "POST") {
@@ -783,43 +808,19 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
 }
 
 async function handleExternalModels(req, res, accessId) {
-  // Model discovery is free in token terms, but it still reaches the selected
-  // upstream window. Reserve a zero-token request so request, RPM and
-  // concurrency policies cannot be bypassed through repeated /models calls.
-  const reserved = store.checkAndReserve({
-    id: accessId,
-    apiKey: bearerToken(req),
-    model: "models",
-    inputTokens: 0,
-    maxOutputTokens: 0,
-    estimatedTokens: 0,
-    allowZeroTokens: true,
-    skipModelPolicy: true,
-    skipTokenLimit: true
-  });
-  if (!reserved?.ok) return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), externalPolicyCode(reserved?.reason));
-  const startedAt = Date.now();
-  let settled = false;
-  const settle = status => {
-    if (settled) return;
-    settled = true;
-    store.settleReservation(reserved.reservationId, {
-      model: "models",
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      latency_ms: Date.now() - startedAt,
-      status
-    });
-  };
+  // Clients such as Cherry Studio poll /models in the background. It is only
+  // an authenticated capability lookup: no quota, rate, concurrency, or
+  // usage-log entry should be created for it.
+  const authorized = store.authorize(accessId, bearerToken(req));
+  if (!authorized?.ok) {
+    return apiError(res, policyStatus(authorized?.reason), policyMessage(authorized?.reason), externalPolicyCode(authorized?.reason));
+  }
   try {
-    const { response } = await upstreamFetchFromAllowedWindows(reserved.channel, "models");
+    const { response } = await upstreamFetchFromAllowedWindows(authorized.channel, "models");
     const payload = await response.json();
-    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(reserved.channel, item?.id)) : [];
-    settle("ok");
+    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(authorized.channel, item?.id)) : [];
     return sendJson(res, 200, { object: "list", data });
   } catch (error) {
-    settle("upstream_error");
     return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
   }
 }
@@ -857,7 +858,8 @@ async function handleExternalChat(req, res, accessId) {
   }
 
   const maxOutputTokens = requestedOutputTokens(body, provisional.channel);
-  body.max_tokens = maxOutputTokens;
+  if (maxOutputTokens !== null) body.max_tokens = maxOutputTokens;
+  else delete body.max_tokens;
   delete body.max_completion_tokens;
   delete body.maxOutputTokens;
   const reserved = store.checkAndReserve({
@@ -865,8 +867,8 @@ async function handleExternalChat(req, res, accessId) {
     apiKey: bearerToken(req),
     model,
     inputTokens,
-    maxOutputTokens,
-    estimatedTokens: inputTokens + maxOutputTokens
+    ...(maxOutputTokens !== null ? { maxOutputTokens } : {}),
+    estimatedTokens: inputTokens + (maxOutputTokens ?? 0)
   });
   if (!reserved?.ok) {
     return apiError(res, policyStatus(reserved?.reason), policyMessage(reserved?.reason), externalPolicyCode(reserved?.reason));
