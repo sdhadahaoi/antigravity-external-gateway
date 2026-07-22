@@ -605,10 +605,9 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
 }
 
 async function handleExternalModels(req, res, accessId) {
-  // Model discovery is free in token terms. Return the administrator-approved
-  // model list directly so clients can populate their dropdown even when the
-  // selected upstream account window is idle or marked inactive. Chat requests
-  // still go through the fixed target window and will surface upstream failures.
+  // Model discovery is free in token terms, but it still reaches the selected
+  // upstream window. Reserve a zero-token request so request, RPM and
+  // concurrency policies cannot be bypassed through repeated /models calls.
   const reserved = store.checkAndReserve({
     id: accessId,
     apiKey: bearerToken(req),
@@ -635,13 +634,21 @@ async function handleExternalModels(req, res, accessId) {
       status
     });
   };
-  const allowed = Array.isArray(reserved.channel.allowed_models) ? reserved.channel.allowed_models : [];
-  const data = allowed
-    .map(id => String(id || "").trim())
-    .filter(id => id && id !== "*")
-    .map(id => ({ id, object: "model", created: 0, owned_by: "antigravity-external-gateway" }));
-  settle("ok");
-  return sendJson(res, 200, { object: "list", data });
+  try {
+    const response = await upstreamFetch(upstreamWindowPath(reserved.channel.target_window_id, "models"));
+    if (!response.ok) {
+      try { await response.body?.cancel(); } catch {}
+      settle("upstream_error");
+      return apiError(res, 502, "The model service is temporarily unavailable.", "upstream_unavailable");
+    }
+    const payload = await response.json();
+    const data = Array.isArray(payload.data) ? payload.data.filter(item => modelAllowed(reserved.channel, item?.id)) : [];
+    settle("ok");
+    return sendJson(res, 200, { object: "list", data });
+  } catch (error) {
+    settle("upstream_error");
+    return apiError(res, error.statusCode || 502, error.publicMessage || "The model service is temporarily unavailable.", "upstream_unavailable");
+  }
 }
 
 async function handleExternalChat(req, res, accessId) {
