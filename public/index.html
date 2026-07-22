@@ -75,6 +75,20 @@
             </div>
             <span class="panel-note">创建后仅展示一次密钥</span>
           </div>
+          <div class="quick-guide" aria-label="快速说明">
+            <div>
+              <strong>凭证连接</strong>
+              <span>先在 Render 环境里填 `UPSTREAM_BRIDGE_URL` 和 `UPSTREAM_BRIDGE_API_KEY`，管理页只会读取已绑定的 w1 / w2 窗口。</span>
+            </div>
+            <div>
+              <strong>参数简化</strong>
+              <span>创建和编辑时只保留时间、启用状态、窗口和模型；Token / 频率 / 并发不再在这里填。</span>
+            </div>
+            <div>
+              <strong>地址与 Key</strong>
+              <span>API 地址会完整显示为 `.../u/短地址/v1`，API Key 可直接随机生成，创建后只在当前浏览器保留。</span>
+            </div>
+          </div>
           <form id="createChannelForm" class="channel-form">
             <label>
               通道名称
@@ -83,7 +97,7 @@
             <div class="form-field access-slug-field">
               <label for="createAccessSlug">用户地址标识</label>
               <div class="slug-control">
-                <input id="createAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="留空 = 服务端随机生成">
+                <input id="createAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="留空 = 服务端随机生成">
                 <button class="button button-quiet" id="randomCreateAccessSlug" type="button" title="生成随机用户地址标识">随机生成</button>
               </div>
               <small>仅使用小写字母、数字、连字符或下划线；服务端会检查唯一性。</small>
@@ -93,6 +107,7 @@
               <select name="target_window_id" id="createAccount" required disabled>
                 <option value="">先连接管理端</option>
               </select>
+              <small>本地为空时，请先用上游 bridge 环境变量启动；Render 上请在 Environment 设置 UPSTREAM_BRIDGE_URL 和 UPSTREAM_BRIDGE_API_KEY。</small>
             </label>
             <fieldset class="model-fieldset">
               <legend>允许模型</legend>
@@ -100,27 +115,17 @@
                 <span class="placeholder">先连接管理端以读取模型</span>
               </div>
             </fieldset>
+            <div class="form-field access-slug-field">
+              <label for="createApiKey">API Key</label>
+              <div class="slug-control">
+                <input id="createApiKey" name="api_key" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="点击随机生成完整 API Key">
+                <button class="button button-quiet" id="randomCreateApiKey" type="button">随机生成</button>
+              </div>
+              <small>这个 Key 创建后立即生效；服务端只保存 hash，完整 Key 会保存在当前浏览器。</small>
+            </div>
+            <div class="endpoint-preview" id="createPortalPreview">用户控制台地址：先生成用户地址标识</div>
+            <div class="endpoint-preview" id="createEndpointPreview">完整 API 地址：先生成用户地址标识</div>
             <div class="form-grid two-columns">
-              <label>
-                总 Token 上限
-                <input name="token_limit" type="number" min="0" step="1000" placeholder="留空 = 不限制">
-              </label>
-              <label>
-                请求总数上限
-                <input name="request_limit" type="number" min="0" step="1" placeholder="留空 = 不限制">
-              </label>
-              <label>
-                每分钟请求数
-                <input name="rate_limit_per_minute" type="number" min="0" step="1" placeholder="留空 = 不限制">
-              </label>
-              <label>
-                并发请求数
-                <input name="concurrency_limit" type="number" min="0" step="1" placeholder="留空 = 不限制">
-              </label>
-              <label>
-                单次最大输出 Token
-                <input name="max_output_tokens" type="number" min="0" step="1" placeholder="留空 = 使用网关默认">
-              </label>
               <label>
                 生效时间
                 <input name="starts_at" type="datetime-local">
@@ -137,7 +142,7 @@
             </label>
             <div class="form-actions">
               <button class="button button-quiet" id="randomizeCreateForm" type="button">随机填满</button>
-              <button class="button button-primary" type="submit">创建并生成密钥</button>
+              <button class="button button-primary" type="submit">创建并保存</button>
               <button class="button button-quiet" type="reset">重置</button>
             </div>
             <p id="createMessage" class="form-message" role="status"></p>
@@ -148,12 +153,13 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">ACCESS CHANNELS</p>
-              <h2 id="channelsTitle">外接通道</h2>
+              <h2 id="channelsTitle">朋友信息列表</h2>
+              <p class="muted">每个朋友会保留独立名称、用户控制台地址、API 地址、API Key 状态和用量。</p>
             </div>
             <button class="button button-quiet" id="refreshOverview" type="button">刷新</button>
           </div>
           <div id="channelsList" class="channel-list" aria-live="polite">
-            <div class="empty-state">输入管理密钥后可查看并管理外接通道。</div>
+            <div class="empty-state">输入管理密钥后可查看并管理多个朋友的信息、地址和 API Key。</div>
           </div>
         </section>
       </div>
@@ -259,7 +265,7 @@
           <div class="form-field access-slug-field">
             <label for="editAccessSlug">用户地址标识</label>
             <div class="slug-control">
-              <input id="editAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false">
+              <input id="editAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false">
               <button class="button button-quiet" id="randomEditAccessSlug" type="button" title="生成新的随机用户地址标识">随机生成</button>
             </div>
             <small>留空后由服务端生成新的随机地址；修改后旧的用户地址将失效。</small>
@@ -272,12 +278,8 @@
             <legend>允许模型</legend>
             <div class="model-picker" id="editModels"></div>
           </fieldset>
+          <p class="muted">这里只改时间、窗口、模型和启用状态；高级额度保持现状，不在这个界面填写。</p>
           <div class="form-grid two-columns">
-            <label>总 Token 上限<input name="token_limit" type="number" min="0" step="1000"></label>
-            <label>请求总数上限<input name="request_limit" type="number" min="0" step="1"></label>
-            <label>每分钟请求数<input name="rate_limit_per_minute" type="number" min="0" step="1"></label>
-            <label>并发请求数<input name="concurrency_limit" type="number" min="0" step="1"></label>
-            <label>单次最大输出 Token<input name="max_output_tokens" type="number" min="0" step="1"></label>
             <label>生效时间<input name="starts_at" type="datetime-local"></label>
             <label class="full-width">失效时间<input name="expires_at" type="datetime-local"></label>
           </div>

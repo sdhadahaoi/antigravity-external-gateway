@@ -11,6 +11,7 @@ gateway-data/
 
 # Local tooling
 .DS_Store
+.playwright-cli/
 coverage/
 .nyc_output/
 

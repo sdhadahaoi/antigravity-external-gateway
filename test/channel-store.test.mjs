@@ -48,6 +48,20 @@ test('creates persistent credentials without persisting or exposing raw keys', (
   assert.equal(reopened.authorize(created.channel.id, 'wrong-key', '2030-01-01T12:00:00.000Z').reason, 'invalid_api_key');
 });
 
+test('accepts administrator-provided random API keys without persisting raw keys', (t) => {
+  const { path, store } = makeStore(t);
+  const apiKey = 'agk_' + 'A'.repeat(48);
+  const created = store.create({
+    label: 'Provided key',
+    api_key: apiKey,
+  });
+
+  assert.equal(created.apiKey, apiKey);
+  assert.equal(store.authorize(created.channel.access_slug, apiKey).ok, true);
+  assert.equal(readFileSync(path, 'utf8').includes(apiKey), false);
+  assert.throws(() => store.create({ api_key: 'not-a-real-key' }), /api_key must start with agk_/);
+});
+
 test('supports unique custom access slugs and resolves them across channel operations', (t) => {
   const { store } = makeStore(t);
   const first = store.create({ access_slug: 'friend-alpha_01' });

@@ -27,6 +27,9 @@
     createForm: $("#createChannelForm"),
     createAccount: $("#createAccount"),
     createModels: $("#createModels"),
+    createApiKey: $("#createApiKey"),
+    createPortalPreview: $("#createPortalPreview"),
+    createEndpointPreview: $("#createEndpointPreview"),
     createMessage: $("#createMessage"),
     channelsList: $("#channelsList"),
     logChannel: $("#logChannel"),
@@ -325,7 +328,7 @@
     });
     select.innerHTML = options.length
       ? "<option value=\"\">选择指定凭证窗口</option>" + options.join("")
-      : "<option value=\"\">" + html(disabledText || "没有可用凭证窗口") + "</option>";
+      : "<option value=\"\">" + html(disabledText || "没有可用凭证窗口：请先连接上游 bridge") + "</option>";
     select.disabled = !options.length;
   }
 
@@ -337,7 +340,7 @@
     const selectedSet = new Set((selected || []).map(String));
     const modelIds = (state.models || []).map(modelId).filter(Boolean);
     if (!modelIds.length) {
-      container.innerHTML = "<span class=\"placeholder\">没有可选择模型</span>";
+      container.innerHTML = "<span class=\"placeholder\">没有可选择模型：请先连接上游 bridge</span>";
       return;
     }
     container.innerHTML = modelIds.map((id) => (
@@ -406,14 +409,14 @@
       "<div class=\"channel-identity\">" +
         "<div class=\"channel-title-row\"><h3 title=\"" + html(label) + "\">" + html(label) + "</h3>" +
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
-        "<div class=\"channel-meta\"><span>窗口: <code>" + html(account) + "</code></span><span>用户地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
+        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(account) + "</code></span><span>朋友短地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未限制") + "</span></div>" +
       "</div>" +
-      "<div class=\"key-block\"><span>API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "服务端仅保留遮罩") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
+      "<div class=\"key-block\"><span>朋友 API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "完整 Key 不在服务端明文保存，可轮换生成新的") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
         (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
-        "<div class=\"channel-endpoint\"><span>API</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
-        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>用户控制台</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>用户控制台地址</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        "<div class=\"channel-endpoint\"><span>API Base URL</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
         (savedLogin ? "<div class=\"channel-endpoint login-portal\"><span>统计页</span><code title=\"" + html(savedLogin) + "\">" + html(savedLogin) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-login\">复制</button></div>" : "") +
       "</div>" +
       "<div class=\"usage-stack\">" +
@@ -452,7 +455,7 @@
 
     elements.channelsList.innerHTML = state.channels.length
       ? state.channels.map(renderChannelCard).join("")
-      : "<div class=\"empty-state\">尚未创建外接通道。选择指定凭证窗口后即可生成独立 API Key。</div>";
+      : "<div class=\"empty-state\">尚未创建朋友配置。选择指定凭证窗口后，即可为每个朋友生成独立用户地址和 API Key。</div>";
 
     const currentLogSelection = elements.logChannel.value;
     const options = state.channels.map((channel) => {
@@ -530,7 +533,7 @@
   }
 
   function randomToken(length) {
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let value = "";
     if (window.crypto && typeof window.crypto.getRandomValues === "function") {
       const bytes = new Uint8Array(length);
@@ -542,6 +545,10 @@
       }
     }
     return value;
+  }
+
+  function randomApiKey() {
+    return "agk_" + randomToken(48);
   }
 
   function randomChoice(values) {
@@ -556,6 +563,14 @@
 
   function fillRandomAccessSlug(input) {
     input.value = randomAccessSlug();
+    input.focus();
+    if (input && input.form && input.form.id === "createChannelForm") {
+      updateCreateEndpointPreview();
+    }
+  }
+
+  function fillRandomApiKey(input) {
+    input.value = randomApiKey();
     input.focus();
   }
 
@@ -572,11 +587,7 @@
 
     setValue("label", "朋友-" + suffix);
     setValue("access_slug", slug);
-    setValue("token_limit", randomChoice([50000, 100000, 200000, 500000, 1000000]));
-    setValue("request_limit", randomChoice([100, 300, 500, 1000, 3000]));
-    setValue("rate_limit_per_minute", randomChoice([3, 5, 10, 20, 30]));
-    setValue("concurrency_limit", randomChoice([1, 2, 3, 5]));
-    setValue("max_output_tokens", randomChoice([1024, 2048, 4096, 8192]));
+    setValue("api_key", randomApiKey());
     setValue("starts_at", localDatetimeAfter(0));
     setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
     form.elements.enabled.checked = true;
@@ -589,6 +600,25 @@
     if (modelInputs.length && (!onlyEmpty || !selectedModels(elements.createModels).length)) {
       modelInputs.forEach((input) => { input.checked = true; });
     }
+    updateCreateEndpointPreview();
+  }
+
+  function updateCreateEndpointPreview() {
+    if (!elements.createEndpointPreview && !elements.createPortalPreview) return;
+    const slug = String(elements.createForm.elements.access_slug?.value || "").trim().toLowerCase();
+    if (!slug) {
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：先生成用户地址标识";
+      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：先生成用户地址标识";
+      return;
+    }
+    if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：用户地址标识格式不正确";
+      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：用户地址标识格式不正确";
+      return;
+    }
+    const userRoot = userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
+    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：" + userRoot;
+    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：" + userRoot + "v1";
   }
 
   function collectPayload(form, modelContainer) {
@@ -600,20 +630,29 @@
     if (!targetWindow) throw new Error("请选择指定凭证窗口。");
     if (!allowedModels.length) throw new Error("请至少选择一个允许模型。");
 
-    return {
+    const payload = {
       label,
       access_slug: accessSlugOrNull(values.get("access_slug")),
       target_window_id: targetWindow,
       allowed_models: allowedModels,
-      token_limit: numericOrNull(values.get("token_limit")),
-      request_limit: numericOrNull(values.get("request_limit")),
-      rate_limit_per_minute: numericOrNull(values.get("rate_limit_per_minute")),
-      concurrency_limit: numericOrNull(values.get("concurrency_limit")),
-      max_output_tokens: numericOrNull(values.get("max_output_tokens")),
       starts_at: valueOrNull(values.get("starts_at")),
       expires_at: valueOrNull(values.get("expires_at")),
       enabled: values.get("enabled") === "on",
     };
+
+    const includeOptionalNumber = (name) => {
+      if (!form.elements.namedItem(name)) return;
+      payload[name] = numericOrNull(values.get(name));
+    };
+
+    if (form.elements.namedItem("api_key")) payload.api_key = valueOrNull(values.get("api_key"));
+    includeOptionalNumber("token_limit");
+    includeOptionalNumber("request_limit");
+    includeOptionalNumber("rate_limit_per_minute");
+    includeOptionalNumber("concurrency_limit");
+    includeOptionalNumber("max_output_tokens");
+
+    return payload;
   }
 
   function openModal(modal) {
@@ -678,14 +717,14 @@
     try {
       const result = await api("/api/admin/channels", { method: "POST", body: JSON.stringify(payload) });
       elements.createForm.reset();
-      setMessage(elements.createMessage, "通道已创建，密钥正在显示。", "success");
+      setMessage(elements.createMessage, "朋友配置已创建，密钥正在显示。", "success");
       showRawKey(result.api_key, result.channel);
       await loadOverview();
     } catch (error) {
       setMessage(elements.createMessage, asErrorMessage(error, "创建失败。"), "error");
     } finally {
       submit.disabled = false;
-      submit.textContent = "创建并生成密钥";
+      submit.textContent = "创建并保存";
     }
   }
 
@@ -697,11 +736,11 @@
     form.elements.access_slug.value = accessSlugFor(channel);
     renderAccountOptions(elements.editAccount, channelValue(channel, ["target_window_id", "account_id", "window_id"], ""));
     renderModelPicker(elements.editModels, channelAllowedModels(channel));
-    form.elements.token_limit.value = channelValue(channel, ["token_limit", "total_token_limit"], null) ?? "";
-    form.elements.request_limit.value = channelValue(channel, ["request_limit"], null) ?? "";
-    form.elements.rate_limit_per_minute.value = channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null) ?? "";
-    form.elements.concurrency_limit.value = channelValue(channel, ["concurrency_limit"], null) ?? "";
-    form.elements.max_output_tokens.value = channelValue(channel, ["max_output_tokens", "max_tokens"], null) ?? "";
+    if (form.elements.token_limit) form.elements.token_limit.value = channelValue(channel, ["token_limit", "total_token_limit"], null) ?? "";
+    if (form.elements.request_limit) form.elements.request_limit.value = channelValue(channel, ["request_limit"], null) ?? "";
+    if (form.elements.rate_limit_per_minute) form.elements.rate_limit_per_minute.value = channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null) ?? "";
+    if (form.elements.concurrency_limit) form.elements.concurrency_limit.value = channelValue(channel, ["concurrency_limit"], null) ?? "";
+    if (form.elements.max_output_tokens) form.elements.max_output_tokens.value = channelValue(channel, ["max_output_tokens", "max_tokens"], null) ?? "";
     form.elements.starts_at.value = toDatetimeLocal(channelValue(channel, ["starts_at", "startsAt"], ""));
     form.elements.expires_at.value = toDatetimeLocal(channelValue(channel, ["expires_at", "expiresAt"], ""));
     form.elements.enabled.checked = channelEnabled(channel);
@@ -727,7 +766,7 @@
       await api("/api/admin/channels/" + encodeURIComponent(id), { method: "PATCH", body: JSON.stringify(payload) });
       closeModal(elements.editModal);
       await loadOverview();
-      showToast("通道设置已保存。");
+      showToast("朋友配置已保存。");
     } catch (error) {
       setMessage(elements.editMessage, asErrorMessage(error, "保存失败。"), "error");
     } finally {
@@ -756,23 +795,23 @@
         body: JSON.stringify({ enabled: nextEnabled }),
       });
       await loadOverview();
-      showToast(nextEnabled ? "通道已启用。" : "通道已停用，外接请求将被拒绝。");
+      showToast(nextEnabled ? "朋友配置已启用。" : "朋友配置已停用，外接请求将被拒绝。");
     } catch (error) {
-      showToast(asErrorMessage(error, "更新通道状态失败。"), "error");
+      showToast(asErrorMessage(error, "更新朋友配置状态失败。"), "error");
     }
   }
 
   async function deleteChannel(channel) {
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     const label = pick(channel, ["label", "name"], id);
-    if (!window.confirm("删除“" + label + "”后，此通道的 API Key 将永久失效。确定删除吗？")) return;
+    if (!window.confirm("删除“" + label + "”后，这个朋友的 API Key 将永久失效。确定删除吗？")) return;
     try {
       await api("/api/admin/channels/" + encodeURIComponent(id), { method: "DELETE" });
       forgetApiKey(channel);
       await loadOverview();
-      showToast("通道已删除。");
+      showToast("朋友配置已删除。");
     } catch (error) {
-      showToast(asErrorMessage(error, "删除通道失败。"), "error");
+      showToast(asErrorMessage(error, "删除朋友配置失败。"), "error");
     }
   }
 
@@ -865,7 +904,7 @@
       state.channels = [];
       state.accounts = [];
       state.models = [];
-      elements.channelsList.innerHTML = "<div class=\"empty-state\">输入管理密钥后可查看并管理外接通道。</div>";
+      elements.channelsList.innerHTML = "<div class=\"empty-state\">输入管理密钥后可查看并管理多个朋友的信息、地址和 API Key。</div>";
       elements.logsBody.innerHTML = "<tr><td colspan=\"6\" class=\"table-empty\">连接管理端后加载日志。</td></tr>";
       setMessage(elements.adminMessage, "已清除当前会话中的管理密钥。", "");
     });
@@ -876,14 +915,20 @@
     $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.userBaseUrl, "已复制外接 API 地址。"));
     $("#randomizeCreateForm").addEventListener("click", () => {
       fillCreateFormRandomly();
-      setMessage(elements.createMessage, "已随机填满。点“创建并生成密钥”后，这套地址和 Key 才会真正保存并可登录。", "success");
+      setMessage(elements.createMessage, "已随机填满。点“创建并保存”后，这套完整 API 地址和 Key 才会真正保存并可登录。", "success");
     });
     $("#randomCreateAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.createForm.elements.access_slug));
+    $("#randomCreateApiKey").addEventListener("click", () => fillRandomApiKey(elements.createApiKey));
     $("#randomEditAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.editForm.elements.access_slug));
-    [elements.createForm.elements.access_slug, elements.editForm.elements.access_slug].forEach((input) => {
-      input.addEventListener("input", () => {
-        input.value = input.value.toLowerCase();
-      });
+    elements.createForm.elements.access_slug.addEventListener("input", () => {
+      elements.createForm.elements.access_slug.value = elements.createForm.elements.access_slug.value.toLowerCase();
+      updateCreateEndpointPreview();
+    });
+    elements.editForm.elements.access_slug.addEventListener("input", () => {
+      elements.editForm.elements.access_slug.value = elements.editForm.elements.access_slug.value.toLowerCase();
+    });
+    elements.createForm.addEventListener("reset", () => {
+      window.setTimeout(updateCreateEndpointPreview, 0);
     });
     elements.createForm.addEventListener("submit", createChannel);
     elements.editForm.addEventListener("submit", saveEdit);

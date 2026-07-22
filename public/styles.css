@@ -235,6 +235,35 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .channel-form > .form-field,
 .form-grid > label { display: grid; gap: 6px; color: #c9d5da; font-size: 12px; font-weight: 620; }
 
+.quick-guide {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: -4px 0 16px;
+}
+
+.quick-guide > div {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid #314651;
+  border-radius: 5px;
+  background: #111a21;
+}
+
+.quick-guide strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #d9f8f3;
+  font-size: 12px;
+}
+
+.quick-guide span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .access-slug-field small { color: var(--subtle); font-size: 11px; font-weight: 500; line-height: 1.45; }
 .slug-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .slug-control .button { min-width: 74px; }
@@ -275,6 +304,18 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .model-choice input:checked + span { border-color: #43bba9; color: #d3fff7; background: var(--accent-soft); }
 .model-choice input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 .placeholder { align-self: center; color: var(--subtle); font-size: 12px; }
+
+.endpoint-preview {
+  overflow: hidden;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: #b6efe7;
+  background: #10171b;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .switch-row { display: inline-flex; align-items: center; gap: 8px; color: #c9d5da; font-size: 12px; font-weight: 600; cursor: pointer; }
 .switch-row input { position: absolute; width: 1px; height: 1px; opacity: 0; }
@@ -395,6 +436,7 @@ tbody tr:last-child td { border-bottom: 0; }
   .upstream-state { align-self: flex-start; }
   .admin-key-row { flex-wrap: wrap; }
   .admin-key-row input { flex-basis: 100%; }
+  .quick-guide { grid-template-columns: 1fr; }
   .summary-section, .lower-grid { grid-template-columns: 1fr; }
   .two-columns { grid-template-columns: 1fr; }
   .full-width { grid-column: auto; }
