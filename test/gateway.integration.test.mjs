@@ -104,6 +104,92 @@ test("gateway isolates upstream credentials and separates administrator and user
         ]
       });
     }
+    if (req.url === "/api/antigravity/quota") {
+      return json(res, 200, {
+        ok: true,
+        credentials: [
+          {
+            name: "private-account",
+            profile: "private-account",
+            models: [
+              { id: "claude-sonnet-4-6", label: "Claude Sonnet", remainingFraction: 0.72, resetTime: "2026-07-22T16:00:00Z" },
+              { id: "gemini-3-5-flash-medium", label: "Gemini", remainingFraction: 0.31, resetTime: "2026-07-22T16:00:00Z" }
+            ]
+          },
+          {
+            name: "backup-account",
+            profile: "backup-account",
+            models: [
+              { id: "gemini-3-5-flash-medium", label: "Backup Gemini", remainingFraction: 0.99, resetTime: "2026-07-22T16:00:00Z" }
+            ]
+          }
+        ]
+      });
+    }
+    if (req.url === "/api/antigravity/account-windows") {
+      return json(res, 200, {
+        ok: true,
+        windows: [
+          {
+            window_id: "w1",
+            endpoint: { ready: true },
+            credential_status: { bound: true, quota_available: true, reason: "" },
+            credential: {
+              name: "private-account",
+              profile: "private-account",
+              models: [
+                { id: "claude-sonnet-4-6", label: "Claude Sonnet", remainingFraction: 0.72, resetTime: "2026-07-22T16:00:00Z" },
+                { id: "gemini-3-5-flash-medium", label: "Gemini", remainingFraction: 0.31, resetTime: "2026-07-22T16:00:00Z" }
+              ]
+            }
+          },
+          {
+            window_id: "w2",
+            endpoint: { ready: true },
+            credential_status: { bound: true, quota_available: true, reason: "" },
+            credential: {
+              name: "backup-account",
+              profile: "backup-account",
+              models: [
+                { id: "gemini-3-5-flash-medium", label: "Backup Gemini", remainingFraction: 0.99, resetTime: "2026-07-22T16:00:00Z" }
+              ]
+            }
+          }
+        ]
+      });
+    }
+    if (req.url === "/api/antigravity/token-estimate") {
+      return json(res, 200, {
+        ok: true,
+        generated_at: "2026-07-22T12:00:00Z",
+        families: [
+          {
+            id: "claude_gpt",
+            label: "Claude / GPT",
+            confidence: "low",
+            five_hour_presented_remaining_tokens: 120000,
+            five_hour_presented_capacity_tokens: 200000,
+            five_hour_presented_input_tokens: 90000,
+            five_hour_presented_output_tokens: 30000,
+            seven_day_presented_remaining_tokens: 300000,
+            seven_day_presented_capacity_tokens: 500000,
+            seven_day_presented_input_tokens: 180000,
+            seven_day_presented_output_tokens: 60000,
+            presented_effective_remaining_tokens: 120000,
+            presented_effective_capacity_tokens: 200000
+          },
+          {
+            id: "gemini",
+            label: "Gemini",
+            confidence: "low",
+            five_hour_presented_remaining_tokens: 999999,
+            five_hour_presented_capacity_tokens: 1000000,
+            presented_effective_remaining_tokens: 999999,
+            presented_effective_capacity_tokens: 1000000
+          }
+        ]
+      });
+    }
     if (req.url === "/windows/w2/v1/models" || req.url === "/windows/w2/v1/chat/completions") {
       return json(res, 503, { error: "w2 intentionally unavailable" });
     }
@@ -465,7 +551,32 @@ test("gateway isolates upstream credentials and separates administrator and user
     body: JSON.stringify({ text: "你好 user portal" })
   });
   assert.equal(userEstimate.status, 200);
-  assert.ok((await userEstimate.json()).estimate_tokens > 0);
+  const userEstimatePayload = await userEstimate.json();
+  assert.ok(userEstimatePayload.estimate_tokens > 0);
+  assert.match(userEstimatePayload.input_output_ratio, /^\d+:\d+$/);
+
+  const adminQuota = await (await adminRequest("/api/admin/quota", { headers: adminHeaders })).json();
+  assert.equal(adminQuota.scope, "admin");
+  assert.equal(JSON.stringify(adminQuota).includes("backup-account"), true);
+  assert.equal(JSON.stringify(adminQuota).includes("gemini"), true);
+
+  const userQuotaResponse = await userRequest(`/u/${encodeURIComponent(created.channel.access_slug)}/user/quota`, { headers: externalHeaders });
+  assert.equal(userQuotaResponse.status, 200);
+  const userQuota = await userQuotaResponse.json();
+  const userQuotaText = JSON.stringify(userQuota);
+  assert.equal(userQuota.scope, "user");
+  assert.deepEqual(userQuota.target_window_ids, ["w1"]);
+  assert.deepEqual(userQuota.allowed_models, ["claude-sonnet-4-6-thinking-ag"]);
+  assert.equal(userQuota.model_quotas.length, 1);
+  assert.equal(userQuota.model_quotas[0].id, "claude-sonnet-4-6-thinking-ag");
+  assert.equal(userQuota.model_quotas[0].percent, 72);
+  assert.equal(userQuota.model_quotas[0].windows.some(window => window.window_id === "w1"), true);
+  assert.equal(userQuotaText.includes("w2"), false);
+  assert.equal(userQuotaText.includes("backup-account"), false);
+  assert.equal(userQuotaText.includes("private-account"), false);
+  assert.equal(userQuotaText.includes("gemini"), false);
+  assert.deepEqual(userQuota.token_estimate.families.map(family => family.id), ["claude_gpt"]);
+  assert.equal(userQuota.token_estimate.families[0].five_hour.input_output_ratio, "3:1");
 
   const forbidden = await userRequest(chatPath, {
     method: "POST",
@@ -502,4 +613,96 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.ok(seen.some(entry => entry.path === "/windows/w1/v1/chat/completions"));
   assert.ok(seen.every(entry => entry.auth === `Bearer ${expectedUpstreamKey}`));
   assert.equal((await userRequest("/v1/models", { headers: externalHeaders })).status, 401);
+});
+
+test("gateway exposes configured model aliases and rewrites chat requests upstream", async t => {
+  const expectedUpstreamKey = "bridge-admin-secret";
+  const seen = [];
+  const upstream = createServer(async (req, res) => {
+    const body = await new Promise(resolveBody => {
+      const chunks = [];
+      req.on("data", chunk => chunks.push(chunk));
+      req.on("end", () => resolveBody(Buffer.concat(chunks).toString("utf8")));
+    });
+    seen.push({ path: req.url, auth: req.headers.authorization, body });
+    if (req.headers.authorization !== `Bearer ${expectedUpstreamKey}`) return json(res, 401, { error: "bad upstream auth" });
+    if (req.url === "/api/accounts") {
+      return json(res, 200, {
+        antigravity: [{ name: "private-account", window_id: "w1", has_oauth_credentials: true, has_login_credentials: true }]
+      });
+    }
+    if (req.url === "/v1/models" || req.url === "/windows/w1/v1/models") {
+      return json(res, 200, {
+        object: "list",
+        data: [{ id: "claude-sonnet-4-6-thinking-ag", label: "Claude Sonnet" }]
+      });
+    }
+    if (req.url === "/windows/w1/v1/chat/completions") {
+      const requestBody = JSON.parse(body || "{}");
+      return json(res, 200, {
+        object: "chat.completion",
+        model: requestBody.model,
+        choices: [{ message: { role: "assistant", content: "alias answer" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+      });
+    }
+    return json(res, 404, { error: "unexpected" });
+  });
+  const upstreamPort = await listen(upstream);
+  const gatewayPort = await freePort();
+  const dataDir = mkdtempSync(join(tmpdir(), "ag-gateway-alias-"));
+  const gateway = spawn(process.execPath, ["server.mjs"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      PORT: String(gatewayPort),
+      GATEWAY_ADMIN_KEY: "gateway-admin-key",
+      GATEWAY_DATA_DIR: dataDir,
+      GATEWAY_MODEL_ALIASES: "sonnet:claude-sonnet-4-6-thinking-ag",
+      UPSTREAM_BRIDGE_URL: `http://127.0.0.1:${upstreamPort}`,
+      UPSTREAM_BRIDGE_API_KEY: expectedUpstreamKey
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(async () => {
+    if (gateway.exitCode === null) gateway.kill();
+    await close(upstream);
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const origin = `http://127.0.0.1:${gatewayPort}`;
+  await waitForHealth(origin, gateway);
+  const adminHeaders = { authorization: "Bearer gateway-admin-key", "content-type": "application/json" };
+  const overview = await (await rawHttpRequest(origin, "/api/admin/overview", { headers: adminHeaders })).json();
+  assert.deepEqual(overview.models.map(item => item.id), ["claude-sonnet-4-6-thinking-ag", "sonnet"]);
+
+  const createdResponse = await rawHttpRequest(origin, "/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "alias friend",
+      target_window_id: "w1",
+      allowed_models: ["sonnet"]
+    })
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  const basePath = new URL(created.channel.endpoint).pathname;
+  const externalHeaders = { authorization: `Bearer ${created.api_key}`, "content-type": "application/json" };
+
+  const models = await (await rawHttpRequest(origin, `${basePath}/models`, { headers: externalHeaders })).json();
+  assert.deepEqual(models.data.map(item => item.id), ["sonnet"]);
+  assert.equal(models.data[0].target, "claude-sonnet-4-6-thinking-ag");
+
+  const completion = await rawHttpRequest(origin, `${basePath}/chat/completions`, {
+    method: "POST",
+    headers: externalHeaders,
+    body: JSON.stringify({ model: "sonnet", messages: [{ role: "user", content: "hello alias" }] })
+  });
+  assert.equal(completion.status, 200);
+  const upstreamChat = seen
+    .filter(entry => entry.path === "/windows/w1/v1/chat/completions")
+    .map(entry => JSON.parse(entry.body || "{}"))
+    .at(-1);
+  assert.equal(upstreamChat.model, "claude-sonnet-4-6-thinking-ag");
 });
