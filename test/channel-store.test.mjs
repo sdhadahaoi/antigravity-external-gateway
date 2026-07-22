@@ -242,6 +242,44 @@ test('enforces request rate and lifespan and releases expired reservations', (t)
   assert.equal(store.checkAndReserve({ ...input, now: 70_000 }).reason, 'expired');
 });
 
+test('enforces per-minute token throughput limits', (t) => {
+  const { path, store } = makeStore(t);
+  const created = store.create({
+    label: 'TPM limited',
+    allowed_models: ['gemini-*'],
+    token_limit_per_minute: 50,
+    window_concurrency_limit: 1,
+  });
+  const input = {
+    id: created.channel.id,
+    apiKey: created.apiKey,
+    model: 'gemini-3-5-flash-high-ag',
+    inputTokens: 30,
+    maxOutputTokens: 10,
+  };
+
+  const first = store.checkAndReserve({ ...input, now: 100_000 });
+  assert.equal(first.ok, true);
+  let summary = store.summary(created.channel.id, { now: 100_001 });
+  assert.equal(summary.channel.token_limit_per_minute, 50);
+  assert.equal(summary.channel.window_concurrency_limit, 1);
+  assert.equal(summary.usage.tokens_last_minute, 40);
+  assert.equal(summary.remaining.tokens_this_minute, 10);
+
+  store.settleReservation(first.reservationId, { inputTokens: 30, outputTokens: 5, now: 100_002 });
+  const rejected = store.checkAndReserve({ ...input, inputTokens: 10, maxOutputTokens: 10, now: 100_003 });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.reason, 'token_rate_limit_exceeded');
+
+  const reopened = new ChannelStore(path);
+  summary = reopened.summary(created.channel.id, { now: 100_004 });
+  assert.equal(summary.usage.tokens_last_minute, 40);
+  assert.equal(summary.remaining.tokens_this_minute, 10);
+
+  const afterWindow = reopened.checkAndReserve({ ...input, inputTokens: 10, maxOutputTokens: 10, now: 160_001 });
+  assert.equal(afterWindow.ok, true);
+});
+
 test('inspect returns valid inactive channels while authorize remains an active-only gate', (t) => {
   const { store } = makeStore(t);
   const expired = store.create({
