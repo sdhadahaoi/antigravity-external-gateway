@@ -570,7 +570,7 @@
       exported_without_api_key: !savedKey,
     };
 
-    ["token_limit", "request_limit", "rate_limit_per_minute", "concurrency_limit", "max_output_tokens"].forEach((name) => {
+    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
       const value = channelValue(channel, [name], undefined);
       if (value !== undefined && value !== null && value !== "") backup[name] = value;
     });
@@ -676,7 +676,7 @@
       enabled: friend.enabled !== false,
     };
 
-    ["token_limit", "request_limit", "rate_limit_per_minute", "concurrency_limit", "max_output_tokens"].forEach((name) => {
+    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
       if (friend[name] !== undefined && friend[name] !== null && friend[name] !== "") payload[name] = friend[name];
     });
     return payload;
@@ -774,6 +774,38 @@
     if (text === "") return null;
     const number = Number(text);
     return Number.isFinite(number) && number >= 0 ? number : null;
+  }
+
+  function tokenUnitMultiplier(unit) {
+    if (unit === "k") return 1000;
+    if (unit === "w") return 10000;
+    if (unit === "m") return 1000000;
+    return 1;
+  }
+
+  function scaledTokenOrNull(form, name) {
+    const input = form.elements.namedItem(name);
+    if (!input) return null;
+    const text = String(input.value == null ? "" : input.value).trim();
+    if (text === "") return null;
+    const number = Number(text);
+    if (!Number.isFinite(number) || number < 0) return null;
+    const unit = form.querySelector("[data-token-unit-for='" + name + "']")?.value || "raw";
+    return Math.floor(number * tokenUnitMultiplier(unit));
+  }
+
+  function setScaledTokenField(form, name, value, preferredUnit = "w") {
+    const input = form.elements.namedItem(name);
+    if (!input) return;
+    const select = form.querySelector("[data-token-unit-for='" + name + "']");
+    const unit = select?.value || preferredUnit;
+    if (select) select.value = unit;
+    if (value === null || value === undefined || value === "") {
+      input.value = "";
+      return;
+    }
+    const divisor = tokenUnitMultiplier(unit);
+    input.value = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2, useGrouping: false }).format(Number(value) / divisor);
   }
 
   function accessSlugOrNull(value) {
@@ -881,6 +913,11 @@
     setValue("label", "朋友-" + suffix);
     setValue("access_slug", slug);
     setValue("api_key", randomApiKey());
+    setValue("token_limit", "100");
+    setValue("token_limit_per_minute", "20");
+    setValue("rate_limit_per_minute", "10");
+    setValue("concurrency_limit", "1");
+    setValue("window_concurrency_limit", "1");
     setValue("starts_at", localDatetimeAfter(0));
     setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
     form.elements.enabled.checked = true;
@@ -939,12 +976,18 @@
       if (!form.elements.namedItem(name)) return;
       payload[name] = numericOrNull(values.get(name));
     };
+    const includeOptionalTokenNumber = (name) => {
+      if (!form.elements.namedItem(name)) return;
+      payload[name] = scaledTokenOrNull(form, name);
+    };
 
     if (form.elements.namedItem("api_key")) payload.api_key = valueOrNull(values.get("api_key"));
-    includeOptionalNumber("token_limit");
+    includeOptionalTokenNumber("token_limit");
+    includeOptionalTokenNumber("token_limit_per_minute");
     includeOptionalNumber("request_limit");
     includeOptionalNumber("rate_limit_per_minute");
     includeOptionalNumber("concurrency_limit");
+    includeOptionalNumber("window_concurrency_limit");
     includeOptionalNumber("max_output_tokens");
 
     return payload;
@@ -1044,10 +1087,12 @@
     form.elements.access_slug.value = accessSlugFor(channel);
     renderAccountPicker(elements.editAccount, channelTargetWindows(channel));
     renderModelPicker(elements.editModels, channelAllowedModels(channel));
-    if (form.elements.token_limit) form.elements.token_limit.value = channelValue(channel, ["token_limit", "total_token_limit"], null) ?? "";
+    setScaledTokenField(form, "token_limit", channelValue(channel, ["token_limit", "total_token_limit"], null), "w");
+    setScaledTokenField(form, "token_limit_per_minute", channelValue(channel, ["token_limit_per_minute"], null), "w");
     if (form.elements.request_limit) form.elements.request_limit.value = channelValue(channel, ["request_limit"], null) ?? "";
     if (form.elements.rate_limit_per_minute) form.elements.rate_limit_per_minute.value = channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null) ?? "";
     if (form.elements.concurrency_limit) form.elements.concurrency_limit.value = channelValue(channel, ["concurrency_limit"], null) ?? "";
+    if (form.elements.window_concurrency_limit) form.elements.window_concurrency_limit.value = channelValue(channel, ["window_concurrency_limit"], null) ?? "";
     if (form.elements.max_output_tokens) form.elements.max_output_tokens.value = channelValue(channel, ["max_output_tokens", "max_tokens"], null) ?? "";
     form.elements.starts_at.value = toDatetimeLocal(channelValue(channel, ["starts_at", "startsAt"], ""));
     form.elements.expires_at.value = toDatetimeLocal(channelValue(channel, ["expires_at", "expiresAt"], ""));
