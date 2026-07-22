@@ -35,7 +35,6 @@
     allowedModelSummary: $("allowedModelSummary"),
     allowedModels: $("allowedModels"),
     numberUnit: $("numberUnit"),
-    quotaNumberUnit: $("quotaNumberUnit"),
     refreshQuota: $("refreshQuota"),
     oauthQuotaResult: $("oauthQuotaResult"),
     modelSelect: $("modelSelect"),
@@ -80,9 +79,7 @@
     const next = value || "raw";
     state.numberUnit = next;
     setStoredNumberUnit(next);
-    [elements.numberUnit, elements.quotaNumberUnit].forEach((select) => {
-      if (select && select !== source) select.value = next;
-    });
+    if (elements.numberUnit && elements.numberUnit !== source) elements.numberUnit.value = next;
     if (state.overview) renderOverview(state.overview);
     if (state.quotaPayload) renderQuota(state.quotaPayload);
     void loadLogs();
@@ -374,6 +371,22 @@
     return node;
   }
 
+  function quotaUnitOptions(select, currentValue) {
+    const options = [
+      ["raw", "原始"],
+      ["k", "K"],
+      ["w", "W/万"],
+      ["m", "M"],
+    ];
+    for (const [value, label] of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      if (value === currentValue) option.selected = true;
+      select.append(option);
+    }
+  }
+
   function renderQuota(payload) {
     if (!elements.oauthQuotaResult) return;
     state.quotaPayload = payload;
@@ -414,7 +427,24 @@
     }
 
     if (families.length) {
-      appendText(elements.oauthQuotaResult, "h3", "预估可用 Token");
+      const heading = document.createElement("div");
+      heading.className = "quota-result-heading";
+      const title = document.createElement("h3");
+      title.textContent = "预估可用 Token";
+      const controls = document.createElement("div");
+      controls.className = "quota-result-controls";
+      const label = document.createElement("label");
+      label.textContent = "数字单位";
+      label.setAttribute("for", "quotaResultNumberUnit");
+      const select = document.createElement("select");
+      select.id = "quotaResultNumberUnit";
+      select.setAttribute("aria-label", "预估可用 Token 数字单位");
+      quotaUnitOptions(select, state.numberUnit);
+      select.addEventListener("change", () => setNumberUnit(select.value, select));
+      controls.append(label, select);
+      heading.append(title, controls);
+      elements.oauthQuotaResult.append(heading);
+
       const grid = document.createElement("div");
       grid.className = "quota-family-grid";
       for (const family of families) {
@@ -684,10 +714,6 @@
   if (elements.numberUnit) {
     elements.numberUnit.value = state.numberUnit;
     elements.numberUnit.addEventListener("change", () => setNumberUnit(elements.numberUnit.value, elements.numberUnit));
-  }
-  if (elements.quotaNumberUnit) {
-    elements.quotaNumberUnit.value = state.numberUnit;
-    elements.quotaNumberUnit.addEventListener("change", () => setNumberUnit(elements.quotaNumberUnit.value, elements.quotaNumberUnit));
   }
 
   try {
