@@ -337,6 +337,43 @@ progress.unlimited { opacity: 0.4; }
   font-size: 11px;
 }
 
+.oauth-quota-panel { margin-top: 12px; }
+.quota-result { display: grid; gap: 10px; color: var(--muted); font-size: 12px; }
+.quota-model-grid,
+.quota-family-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+.quota-mini-card {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 11px;
+  background: #11191f;
+}
+.quota-mini-card h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.quota-mini-card p { margin: 4px 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.quota-mini-card strong { color: #cafff4; }
+.quota-window-list { display: grid; gap: 5px; margin-top: 8px; }
+.quota-window {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 5px;
+  color: var(--subtle);
+  font-size: 11px;
+}
+.quota-window.ok strong { color: #aef2c9; }
+.quota-window.warn strong { color: #ffe0a0; }
+.quota-window.bad strong { color: #ffb2ae; }
+
 .tool-grid {
   display: grid;
   grid-template-columns: minmax(400px, 1.1fr) minmax(420px, 0.9fr);
