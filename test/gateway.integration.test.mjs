@@ -176,7 +176,30 @@ test("gateway isolates upstream credentials and separates administrator and user
             seven_day_presented_input_tokens: 180000,
             seven_day_presented_output_tokens: 60000,
             presented_effective_remaining_tokens: 120000,
-            presented_effective_capacity_tokens: 200000
+            presented_effective_capacity_tokens: 200000,
+            accounts: [
+              {
+                account: "private-account",
+                profile: "private-account",
+                name: "private-account",
+                presented_effective_remaining_tokens: 120000,
+                presented_effective_capacity_tokens: 200000,
+                windows: {
+                  "5h": {
+                    presented_estimated_remaining_tokens: 120000,
+                    presented_estimated_capacity_tokens: 200000,
+                    presented_observed_input_tokens: 90000,
+                    presented_observed_output_tokens: 30000
+                  },
+                  "7d": {
+                    presented_estimated_remaining_tokens: 300000,
+                    presented_estimated_capacity_tokens: 500000,
+                    presented_observed_input_tokens: 180000,
+                    presented_observed_output_tokens: 60000
+                  }
+                }
+              }
+            ]
           },
           {
             id: "gemini",
@@ -185,7 +208,26 @@ test("gateway isolates upstream credentials and separates administrator and user
             five_hour_presented_remaining_tokens: 999999,
             five_hour_presented_capacity_tokens: 1000000,
             presented_effective_remaining_tokens: 999999,
-            presented_effective_capacity_tokens: 1000000
+            presented_effective_capacity_tokens: 1000000,
+            accounts: [
+              {
+                account: "backup-account",
+                profile: "backup-account",
+                name: "backup-account",
+                presented_effective_remaining_tokens: 999999,
+                presented_effective_capacity_tokens: 1000000,
+                windows: {
+                  "5h": {
+                    presented_estimated_remaining_tokens: 999999,
+                    presented_estimated_capacity_tokens: 1000000
+                  },
+                  "7d": {
+                    presented_estimated_remaining_tokens: 999999,
+                    presented_estimated_capacity_tokens: 1000000
+                  }
+                }
+              }
+            ]
           }
         ]
       });
