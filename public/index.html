@@ -125,6 +125,39 @@
             </div>
             <div class="endpoint-preview" id="createPortalPreview">朋友用户页地址：先生成用户地址标识</div>
             <div class="endpoint-preview" id="createEndpointPreview">完整 API 地址：先生成用户地址标识</div>
+            <fieldset class="model-fieldset">
+              <legend>访问额度与并发（可改默认值）</legend>
+              <div class="limit-grid">
+                <label>
+                  朋友最大总 Token
+                  <div class="unit-input">
+                    <input name="token_limit" type="number" min="0" step="0.01" value="100" inputmode="decimal">
+                    <select data-token-unit-for="token_limit" aria-label="朋友最大总 Token 单位">
+                      <option value="k">K</option>
+                      <option value="w" selected>W/万</option>
+                      <option value="m">M</option>
+                      <option value="raw">原始</option>
+                    </select>
+                  </div>
+                </label>
+                <label>
+                  TPM（每分钟 Token）
+                  <div class="unit-input">
+                    <input name="token_limit_per_minute" type="number" min="0" step="0.01" value="20" inputmode="decimal">
+                    <select data-token-unit-for="token_limit_per_minute" aria-label="TPM 单位">
+                      <option value="k">K</option>
+                      <option value="w" selected>W/万</option>
+                      <option value="m">M</option>
+                      <option value="raw">原始</option>
+                    </select>
+                  </div>
+                </label>
+                <label>RPM（每分钟请求）<input name="rate_limit_per_minute" type="number" min="0" step="1" value="10" inputmode="numeric"></label>
+                <label>朋友总并发<input name="concurrency_limit" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
+                <label>单 OAuth 窗口并发<input name="window_concurrency_limit" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
+              </div>
+              <small>这些限制按每个朋友单独统计；单 OAuth 窗口并发会保护同一个 w1/w2 被多个朋友共用时不被打爆。</small>
+            </fieldset>
             <div class="form-grid two-columns">
               <label>
                 生效时间
@@ -322,7 +355,39 @@
             <legend>允许模型</legend>
             <div class="model-picker" id="editModels"></div>
           </fieldset>
-          <p class="muted">这里只改时间、窗口、模型和启用状态；高级额度保持现状，不在这个界面填写。</p>
+          <fieldset class="model-fieldset">
+            <legend>访问额度与并发</legend>
+            <div class="limit-grid">
+              <label>
+                朋友最大总 Token
+                <div class="unit-input">
+                  <input name="token_limit" type="number" min="0" step="0.01" inputmode="decimal">
+                  <select data-token-unit-for="token_limit" aria-label="朋友最大总 Token 单位">
+                    <option value="k">K</option>
+                    <option value="w" selected>W/万</option>
+                    <option value="m">M</option>
+                    <option value="raw">原始</option>
+                  </select>
+                </div>
+              </label>
+              <label>
+                TPM（每分钟 Token）
+                <div class="unit-input">
+                  <input name="token_limit_per_minute" type="number" min="0" step="0.01" inputmode="decimal">
+                  <select data-token-unit-for="token_limit_per_minute" aria-label="TPM 单位">
+                    <option value="k">K</option>
+                    <option value="w" selected>W/万</option>
+                    <option value="m">M</option>
+                    <option value="raw">原始</option>
+                  </select>
+                </div>
+              </label>
+              <label>RPM（每分钟请求）<input name="rate_limit_per_minute" type="number" min="0" step="1" inputmode="numeric"></label>
+              <label>朋友总并发<input name="concurrency_limit" type="number" min="0" step="1" inputmode="numeric"></label>
+              <label>单 OAuth 窗口并发<input name="window_concurrency_limit" type="number" min="0" step="1" inputmode="numeric"></label>
+            </div>
+            <small>朋友总并发限制这个朋友自己的同时请求数；单窗口并发限制同一个 OAuth 窗口被所有朋友合计占用的请求数。</small>
+          </fieldset>
           <div class="form-grid two-columns">
             <label>生效时间<input name="starts_at" type="datetime-local"></label>
             <label class="full-width">失效时间<input name="expires_at" type="datetime-local"></label>
