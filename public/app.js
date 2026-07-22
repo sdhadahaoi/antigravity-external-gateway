@@ -74,6 +74,71 @@
     } catch (_) {}
   }
 
+  function keyVaultName() {
+    return "ag_external_gateway_saved_friend_keys";
+  }
+
+  function readKeyVault() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(keyVaultName()) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeKeyVault(vault) {
+    try {
+      localStorage.setItem(keyVaultName(), JSON.stringify(vault || {}));
+    } catch (_) {
+      showToast("浏览器拒绝保存完整 API Key；请手动复制保存。", "error");
+    }
+  }
+
+  function channelReferences(channel) {
+    const id = String(pick(channel, ["id", "public_id", "channel_id"], "") || "").trim();
+    const slug = accessSlugFor(channel);
+    return [id, slug].filter(Boolean);
+  }
+
+  function rememberApiKey(channel, apiKey) {
+    const cleanKey = String(apiKey || "").trim();
+    const refs = channelReferences(channel || {});
+    if (!cleanKey || !refs.length) return;
+    const vault = readKeyVault();
+    const record = {
+      api_key: cleanKey,
+      access_slug: accessSlugFor(channel || {}),
+      label: pick(channel, ["label", "name"], ""),
+      saved_at: new Date().toISOString(),
+    };
+    refs.forEach((ref) => {
+      vault[ref] = record;
+    });
+    writeKeyVault(vault);
+  }
+
+  function savedApiKeyFor(channel) {
+    const vault = readKeyVault();
+    for (const ref of channelReferences(channel || {})) {
+      const value = vault[ref] && vault[ref].api_key;
+      if (value) return String(value);
+    }
+    return "";
+  }
+
+  function forgetApiKey(channel) {
+    const vault = readKeyVault();
+    let changed = false;
+    channelReferences(channel || {}).forEach((ref) => {
+      if (Object.prototype.hasOwnProperty.call(vault, ref)) {
+        delete vault[ref];
+        changed = true;
+      }
+    });
+    if (changed) writeKeyVault(vault);
+  }
+
   function setMessage(element, message, type) {
     element.textContent = message || "";
     element.className = "form-message" + (type ? " " + type : "");
@@ -332,6 +397,8 @@
     const models = channelAllowedModels(channel);
     const endpoint = endpointFor(channel);
     const friendPortal = friendPortalFor(channel);
+    const savedKey = savedApiKeyFor(channel);
+    const savedLogin = savedKey && friendPortal ? appendKeyToUrl(friendPortal, savedKey) : "";
     const expiry = channelValue(channel, ["expires_at", "expiresAt"], "");
     const disabledClass = enabled ? "" : " disabled";
 
@@ -343,9 +410,11 @@
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未限制") + "</span></div>" +
       "</div>" +
-      "<div class=\"key-block\"><span>API Key（已遮罩）</span><div class=\"key-line\"><code>" + html(maskedKey(channel)) + "</code></div>" +
+      "<div class=\"key-block\"><span>API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "服务端仅保留遮罩") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
+        (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
         "<div class=\"channel-endpoint\"><span>API</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
         (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>用户控制台</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        (savedLogin ? "<div class=\"channel-endpoint login-portal\"><span>统计页</span><code title=\"" + html(savedLogin) + "\">" + html(savedLogin) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-login\">复制</button></div>" : "") +
       "</div>" +
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
@@ -460,9 +529,66 @@
     return "u_" + suffix;
   }
 
+  function randomToken(length) {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let value = "";
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      const bytes = new Uint8Array(length);
+      window.crypto.getRandomValues(bytes);
+      for (const byte of bytes) value += alphabet[byte % alphabet.length];
+    } else {
+      for (let index = 0; index < length; index += 1) {
+        value += alphabet[Math.floor(Math.random() * alphabet.length)];
+      }
+    }
+    return value;
+  }
+
+  function randomChoice(values) {
+    return values[Math.floor(Math.random() * values.length)];
+  }
+
+  function localDatetimeAfter(days) {
+    const date = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    date.setSeconds(0, 0);
+    return toDatetimeLocal(date.toISOString());
+  }
+
   function fillRandomAccessSlug(input) {
     input.value = randomAccessSlug();
     input.focus();
+  }
+
+  function fillCreateFormRandomly(options = {}) {
+    const onlyEmpty = Boolean(options.onlyEmpty);
+    const form = elements.createForm;
+    const slug = randomAccessSlug();
+    const suffix = slug.slice(2, 10);
+    const setValue = (name, value) => {
+      const input = form.elements[name];
+      if (!input) return;
+      if (!onlyEmpty || !String(input.value || "").trim()) input.value = value;
+    };
+
+    setValue("label", "朋友-" + suffix);
+    setValue("access_slug", slug);
+    setValue("token_limit", randomChoice([50000, 100000, 200000, 500000, 1000000]));
+    setValue("request_limit", randomChoice([100, 300, 500, 1000, 3000]));
+    setValue("rate_limit_per_minute", randomChoice([3, 5, 10, 20, 30]));
+    setValue("concurrency_limit", randomChoice([1, 2, 3, 5]));
+    setValue("max_output_tokens", randomChoice([1024, 2048, 4096, 8192]));
+    setValue("starts_at", localDatetimeAfter(0));
+    setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
+    form.elements.enabled.checked = true;
+
+    if (elements.createAccount.options.length && !elements.createAccount.value) {
+      const firstAccount = Array.from(elements.createAccount.options).find((option) => option.value);
+      if (firstAccount) elements.createAccount.value = firstAccount.value;
+    }
+    const modelInputs = $$("input[name='allowed_models']", elements.createModels);
+    if (modelInputs.length && (!onlyEmpty || !selectedModels(elements.createModels).length)) {
+      modelInputs.forEach((input) => { input.checked = true; });
+    }
   }
 
   function collectPayload(form, modelContainer) {
@@ -501,6 +627,7 @@
   }
 
   function showRawKey(apiKey, channel) {
+    if (apiKey) rememberApiKey(channel || {}, apiKey);
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
     elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
@@ -536,6 +663,7 @@
   async function createChannel(event) {
     event.preventDefault();
     setMessage(elements.createMessage, "", "");
+    fillCreateFormRandomly({ onlyEmpty: true });
     let payload;
     try {
       payload = collectPayload(elements.createForm, elements.createModels);
@@ -551,8 +679,8 @@
       const result = await api("/api/admin/channels", { method: "POST", body: JSON.stringify(payload) });
       elements.createForm.reset();
       setMessage(elements.createMessage, "通道已创建，密钥正在显示。", "success");
-      await loadOverview();
       showRawKey(result.api_key, result.channel);
+      await loadOverview();
     } catch (error) {
       setMessage(elements.createMessage, asErrorMessage(error, "创建失败。"), "error");
     } finally {
@@ -612,8 +740,8 @@
     if (!window.confirm("轮换后旧 API Key 将立即失效。确定继续吗？")) return;
     try {
       const result = await api("/api/admin/channels/" + encodeURIComponent(id) + "/rotate", { method: "POST" });
-      await loadOverview();
       showRawKey(result.api_key, result.channel || channel);
+      await loadOverview();
     } catch (error) {
       showToast(asErrorMessage(error, "轮换密钥失败。"), "error");
     }
@@ -640,6 +768,7 @@
     if (!window.confirm("删除“" + label + "”后，此通道的 API Key 将永久失效。确定删除吗？")) return;
     try {
       await api("/api/admin/channels/" + encodeURIComponent(id), { method: "DELETE" });
+      forgetApiKey(channel);
       await loadOverview();
       showToast("通道已删除。");
     } catch (error) {
@@ -745,6 +874,10 @@
     });
     $("#refreshOverview").addEventListener("click", () => loadOverview(true));
     $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.userBaseUrl, "已复制外接 API 地址。"));
+    $("#randomizeCreateForm").addEventListener("click", () => {
+      fillCreateFormRandomly();
+      setMessage(elements.createMessage, "已随机填满。点“创建并生成密钥”后，这套地址和 Key 才会真正保存并可登录。", "success");
+    });
     $("#randomCreateAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.createForm.elements.access_slug));
     $("#randomEditAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.editForm.elements.access_slug));
     [elements.createForm.elements.access_slug, elements.editForm.elements.access_slug].forEach((input) => {
@@ -780,6 +913,13 @@
       if (!channel) return;
       if (action.dataset.action === "copy-endpoint") copyText(action.dataset.endpoint, "已复制外接 API 地址。");
       if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制用户控制台地址。");
+      if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
+      if (action.dataset.action === "copy-login") copyText(appendKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录统计页。");
+      if (action.dataset.action === "forget-saved-key") {
+        forgetApiKey(channel);
+        renderOverview(state.overview || {});
+        showToast("已从当前浏览器忘记这个完整 API Key。");
+      }
       if (action.dataset.action === "edit") {
         populateEditForm(channel);
         openModal(elements.editModal);

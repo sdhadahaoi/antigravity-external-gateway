@@ -136,6 +136,7 @@
               创建后立即启用
             </label>
             <div class="form-actions">
+              <button class="button button-quiet" id="randomizeCreateForm" type="button">随机填满</button>
               <button class="button button-primary" type="submit">创建并生成密钥</button>
               <button class="button button-quiet" type="reset">重置</button>
             </div>
@@ -220,7 +221,7 @@
         <button class="modal-close" type="button" data-close-modal="keyModal" aria-label="关闭">关闭</button>
         <p class="eyebrow">ONE-TIME SECRET</p>
         <h2 id="keyModalTitle">请立即保存外接 API Key</h2>
-        <p class="modal-copy">该密钥不会再次完整显示。列表中只保留遮罩后的识别信息。</p>
+        <p class="modal-copy">该密钥不会再次从服务端完整显示；本管理网页会把它保存在当前浏览器，方便以后继续复制统计页和完整 Key。换电脑或清理浏览器数据后请以这里复制保存的为准。</p>
         <div class="secret-value"><code id="rawApiKey"></code></div>
         <div class="modal-actions">
           <button class="button button-primary" id="copyRawApiKey" type="button">复制 API Key</button>

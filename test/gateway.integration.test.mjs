@@ -221,6 +221,9 @@ test("gateway isolates upstream credentials and separates administrator and user
   const userCss = await (await userRequest("/assets/user.css")).text();
   assert.equal(adminScript.includes("admin_key"), true);
   assert.equal(adminScript.includes("modalLoginEndpoint"), true);
+  assert.equal(adminScript.includes("randomizeCreateForm"), true);
+  assert.equal(adminScript.includes("ag_external_gateway_saved_friend_keys"), true);
+  assert.equal(adminScript.includes("copy-saved-key"), true);
   assert.equal(userScript.includes("api_key"), true);
   assert.equal(userScript.includes("clearSensitiveQuery"), true);
   assert.equal(userCss.includes("[hidden]"), true);
