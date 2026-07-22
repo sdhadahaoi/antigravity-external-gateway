@@ -104,28 +104,7 @@
             <p class="eyebrow">OAUTH QUOTA</p>
             <h2 id="oauthQuotaTitle">我的模型额度</h2>
           </div>
-          <div class="quota-toolbar">
-            <label for="numberUnit">数字单位</label>
-            <select id="numberUnit" aria-label="额度数字单位">
-              <option value="raw">原始</option>
-              <option value="k">K</option>
-              <option value="w">W/万</option>
-              <option value="m">M</option>
-            </select>
-            <button class="button button-quiet" id="refreshQuota" type="button" disabled>刷新额度</button>
-          </div>
-        </div>
-        <div class="quota-subtoolbar" aria-label="预估可用 Token 显示设置">
-          <span class="quota-subtitle">预估可用 Token 显示单位</span>
-          <div class="quota-toolbar">
-            <label for="quotaNumberUnit">数字单位</label>
-            <select id="quotaNumberUnit" aria-label="预估可用 Token 数字单位">
-              <option value="raw">原始</option>
-              <option value="k">K</option>
-              <option value="w">W/万</option>
-              <option value="m">M</option>
-            </select>
-          </div>
+          <button class="button button-quiet" id="refreshQuota" type="button" disabled>刷新额度</button>
         </div>
         <div class="quota-result" id="oauthQuotaResult">连接后查看被允许模型的剩余额度和预估 Token。</div>
       </section>
