@@ -33,6 +33,8 @@
     createApiKey: $("#createApiKey"),
     createPortalPreview: $("#createPortalPreview"),
     createEndpointPreview: $("#createEndpointPreview"),
+    createDurationDays: $("#createDurationDays"),
+    applyCreateDuration: $("#applyCreateDuration"),
     createMessage: $("#createMessage"),
     channelsList: $("#channelsList"),
     friendBackupFile: $("#friendBackupFile"),
@@ -54,6 +56,8 @@
     editForm: $("#editChannelForm"),
     editAccount: $("#editAccount"),
     editModels: $("#editModels"),
+    editDurationDays: $("#editDurationDays"),
+    applyEditDuration: $("#applyEditDuration"),
     editMessage: $("#editMessage"),
     toastRegion: $("#toastRegion"),
   };
@@ -826,6 +830,30 @@
     return toDatetimeLocal(date.toISOString());
   }
 
+  function applyDurationFromNow(form, daysInput, messageElement) {
+    const days = Math.max(1, Math.min(3650, Math.floor(Number(daysInput?.value || 0))));
+    if (!Number.isFinite(days) || days <= 0) {
+      setMessage(messageElement, "请填写有效天数，例如 1、7、30。", "error");
+      return;
+    }
+    if (daysInput) daysInput.value = String(days);
+    const now = new Date();
+    now.setSeconds(0, 0);
+    const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    form.elements.starts_at.value = toDatetimeLocal(now.toISOString());
+    form.elements.expires_at.value = toDatetimeLocal(end.toISOString());
+    setMessage(messageElement, "已按“从现在起 " + days + " 天”自动填写时间。", "success");
+  }
+
+  function applyDurationPreset(target, days) {
+    const isEdit = target === "edit";
+    const form = isEdit ? elements.editForm : elements.createForm;
+    const input = isEdit ? elements.editDurationDays : elements.createDurationDays;
+    const message = isEdit ? elements.editMessage : elements.createMessage;
+    if (input) input.value = String(days);
+    applyDurationFromNow(form, input, message);
+  }
+
   function fillRandomAccessSlug(input) {
     input.value = randomAccessSlug();
     input.focus();
@@ -1303,6 +1331,21 @@
     $("#randomizeCreateForm").addEventListener("click", () => {
       fillCreateFormRandomly();
       setMessage(elements.createMessage, "已随机填满。点“创建并保存”后，这套完整 API 地址和 Key 才会真正保存并可登录。", "success");
+    });
+    if (elements.applyCreateDuration) {
+      elements.applyCreateDuration.addEventListener("click", () => {
+        applyDurationFromNow(elements.createForm, elements.createDurationDays, elements.createMessage);
+      });
+    }
+    if (elements.applyEditDuration) {
+      elements.applyEditDuration.addEventListener("click", () => {
+        applyDurationFromNow(elements.editForm, elements.editDurationDays, elements.editMessage);
+      });
+    }
+    $$("[data-duration-days]").forEach((button) => {
+      button.addEventListener("click", () => {
+        applyDurationPreset(button.dataset.durationTarget, button.dataset.durationDays);
+      });
     });
     $("#randomCreateAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.createForm.elements.access_slug));
     $("#randomCreateApiKey").addEventListener("click", () => fillRandomApiKey(elements.createApiKey));
