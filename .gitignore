@@ -13,3 +13,11 @@ gateway-data/
 .DS_Store
 coverage/
 .nyc_output/
+
+# Build output
+bin/
+obj/
+dist/
+tools/windows-admin-launcher/bin/
+tools/windows-admin-launcher/obj/
+tools/windows-admin-launcher/dist/

@@ -154,3 +154,24 @@ npm test
 - 原 bridge 的上游认证信息仅由 Render 服务端读取，绝不能传给浏览器或外部调用者。
 
 这不是匿名化或绕过上游服务条款的工具。请确保你的分享方式、账号权限和实际用途符合 Antigravity、Render 及相关服务的使用条款。
+
+## Windows 桌面启动器
+
+`tools/windows-admin-launcher/` 中提供了一个简易 Windows 管理启动器源码。它不会打包 OAuth、上游 API Key 或 Render Secret，只连接已经部署好的外接网关。
+
+可用于：
+
+- 保存管理员域名和用户/API 域名；
+- 可选地在本机保存 `GATEWAY_ADMIN_KEY`；
+- 打开管理台和朋友门户；
+- 复制朋友门户地址和 `/v1` API 地址；
+- 检查 `/health` 与管理员概览接口。
+
+构建 exe 需要安装 .NET 8 SDK：
+
+```powershell
+cd tools\windows-admin-launcher
+.\build.ps1
+```
+
+生成文件位于 `tools/windows-admin-launcher/dist/AntigravityGatewayAdmin.exe`。不要把本机生成的配置文件或管理员 Key 发给朋友。
