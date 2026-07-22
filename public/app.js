@@ -9,6 +9,8 @@
     models: [],
     publicBaseUrl: "",
     userBaseUrl: "",
+    numberUnit: storedNumberUnit(),
+    adminQuotaPayload: null,
     loading: false,
     modalChannel: null,
   };
@@ -40,6 +42,7 @@
     estimateText: $("#estimateText"),
     estimateCharacters: $("#estimateCharacters"),
     estimateResult: $("#estimateResult"),
+    numberUnit: $("#numberUnit"),
     adminQuotaResult: $("#adminQuotaResult"),
     refreshAdminQuota: $("#refreshAdminQuota"),
     keyModal: $("#keyModal"),
@@ -57,6 +60,20 @@
 
   function getAdminKey() {
     return elements.adminKey.value.trim();
+  }
+
+  function storedNumberUnit() {
+    try {
+      return localStorage.getItem("ag_external_gateway_number_unit") || "raw";
+    } catch (_) {
+      return "raw";
+    }
+  }
+
+  function setStoredNumberUnit(value) {
+    try {
+      localStorage.setItem("ag_external_gateway_number_unit", value || "raw");
+    } catch (_) {}
   }
 
   function urlKey(name) {
@@ -226,12 +243,28 @@
     return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(numeric);
   }
 
+  function formatScaledNumber(value) {
+    const numeric = numberValue(value);
+    const unit = state.numberUnit || "raw";
+    const units = {
+      raw: { divisor: 1, suffix: "" },
+      k: { divisor: 1000, suffix: "K" },
+      w: { divisor: 10000, suffix: "W" },
+      m: { divisor: 1000000, suffix: "M" },
+    };
+    const meta = units[unit] || units.raw;
+    if (meta.divisor === 1) return formatNumber(numeric);
+    const scaled = numeric / meta.divisor;
+    const maximumFractionDigits = Math.abs(scaled) >= 100 ? 0 : Math.abs(scaled) >= 10 ? 1 : 2;
+    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits }).format(scaled) + meta.suffix;
+  }
+
   function hasLimit(value) {
     return value !== null && value !== undefined && value !== "";
   }
 
   function limitText(used, limit) {
-    return hasLimit(limit) ? formatNumber(used) + " / " + formatNumber(limit) : formatNumber(used) + " / 无上限";
+    return hasLimit(limit) ? formatScaledNumber(used) + " / " + formatScaledNumber(limit) : formatScaledNumber(used) + " / 无上限";
   }
 
   function usagePercent(used, limit) {
@@ -248,17 +281,20 @@
   }
 
   function endpointFor(channel) {
+    const slug = accessSlugFor(channel);
+    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/v1";
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
     if (typeof endpoint === "string" && endpoint) return endpoint;
     if (endpoint && typeof endpoint === "object") {
       const direct = pick(endpoint, ["api_url", "url", "endpoint"], "");
       if (direct) return direct;
     }
-    const slug = accessSlugFor(channel);
-    return slug ? userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/v1" : userBaseUrl();
+    return userBaseUrl();
   }
 
   function friendPortalFor(channel) {
+    const slug = accessSlugFor(channel);
+    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
     const direct = pick(channel, ["friend_portal_url", "external_test_page_url", "portal_url", "user_portal_url"], "");
     if (direct) return direct;
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
@@ -266,20 +302,33 @@
       const fromEndpoint = pick(endpoint, ["friend_portal_url", "portal_url", "test_page_url", "user_portal_url"], "");
       if (fromEndpoint) return fromEndpoint;
     }
-    const slug = accessSlugFor(channel);
-    return slug ? userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/" : "";
+    return "";
   }
 
-  function appendKeyToUrl(baseUrl, key) {
+  function appendAccessKeyToUrl(baseUrl, key) {
     const cleanKey = String(key || "").trim();
     if (!baseUrl || !cleanKey) return baseUrl || "";
     try {
       const url = new URL(baseUrl, window.location.origin);
-      url.searchParams.set("key", cleanKey);
+      url.searchParams.set("access_key", cleanKey);
       return url.toString();
     } catch (_) {
       const separator = String(baseUrl).includes("?") ? "&" : "?";
-      return String(baseUrl) + separator + "key=" + encodeURIComponent(cleanKey);
+      return String(baseUrl) + separator + "access_key=" + encodeURIComponent(cleanKey);
+    }
+  }
+
+  function maskedAccessLoginUrl(baseUrl, key) {
+    const cleanKey = String(key || "").trim();
+    if (!baseUrl || !cleanKey) return baseUrl || "";
+    const masked = cleanKey.length > 10 ? cleanKey.slice(0, 6) + "..." + cleanKey.slice(-6) : "已隐藏";
+    try {
+      const url = new URL(baseUrl, window.location.origin);
+      url.searchParams.set("access_key", masked);
+      return url.toString();
+    } catch (_) {
+      const separator = String(baseUrl).includes("?") ? "&" : "?";
+      return String(baseUrl) + separator + "access_key=" + encodeURIComponent(masked);
     }
   }
 
@@ -425,7 +474,8 @@
     const endpoint = endpointFor(channel);
     const friendPortal = friendPortalFor(channel);
     const savedKey = savedApiKeyFor(channel);
-    const savedLogin = savedKey && friendPortal ? appendKeyToUrl(friendPortal, savedKey) : "";
+    const savedLogin = savedKey && friendPortal ? appendAccessKeyToUrl(friendPortal, savedKey) : "";
+    const savedLoginDisplay = savedKey && friendPortal ? maskedAccessLoginUrl(friendPortal, savedKey) : "";
     const expiry = channelValue(channel, ["expires_at", "expiresAt"], "");
     const disabledClass = enabled ? "" : " disabled";
 
@@ -439,9 +489,9 @@
       "</div>" +
       "<div class=\"key-block\"><span>朋友 API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "完整 Key 不在服务端明文保存，可轮换生成新的") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
         (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
-        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>用户控制台地址</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
-        "<div class=\"channel-endpoint\"><span>API Base URL</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
-        (savedLogin ? "<div class=\"channel-endpoint login-portal\"><span>统计页</span><code title=\"" + html(savedLogin) + "\">" + html(savedLogin) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-login\">复制</button></div>" : "") +
+        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>朋友用户页（统计/额度/日志都在这里）</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        "<div class=\"channel-endpoint\"><span>朋友 API Base URL</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
+        (savedLogin ? "<div class=\"channel-endpoint login-portal\"><span>一键登录朋友页（不是第二个网页）</span><code title=\"真实链接已隐藏，点击复制会复制完整链接\">" + html(savedLoginDisplay) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-login\">复制</button></div>" : "") +
       "</div>" +
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
@@ -476,7 +526,7 @@
     const active = state.channels.filter(channelEnabled).length;
     elements.channelCount.textContent = formatNumber(state.channels.length);
     elements.activeChannelCount.textContent = active + " 个启用";
-    elements.totalTokenUsage.textContent = formatNumber(totalUsage);
+    elements.totalTokenUsage.textContent = formatScaledNumber(totalUsage);
     elements.totalRequestUsage.textContent = formatNumber(requestUsage);
 
     elements.channelsList.innerHTML = state.channels.length
@@ -822,17 +872,17 @@
     if (!elements.createEndpointPreview && !elements.createPortalPreview) return;
     const slug = String(elements.createForm.elements.access_slug?.value || "").trim().toLowerCase();
     if (!slug) {
-      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：先生成用户地址标识";
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：先生成用户地址标识";
       if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：先生成用户地址标识";
       return;
     }
     if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
-      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：用户地址标识格式不正确";
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：用户地址标识格式不正确";
       if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：用户地址标识格式不正确";
       return;
     }
     const userRoot = userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
-    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "用户控制台地址：" + userRoot;
+    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：" + userRoot;
     if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：" + userRoot + "v1";
   }
 
@@ -888,7 +938,7 @@
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
     elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
-    if (elements.modalLoginEndpoint) elements.modalLoginEndpoint.textContent = appendKeyToUrl(friendPortalFor(channel || {}), apiKey);
+    if (elements.modalLoginEndpoint) elements.modalLoginEndpoint.textContent = appendAccessKeyToUrl(friendPortalFor(channel || {}), apiKey);
     openModal(elements.keyModal);
   }
 
@@ -1092,7 +1142,7 @@
             : event === "key_rotated" ? "密钥已轮换"
               : event === "revoked" ? "已停用"
                 : String(status || "-");
-      return "<tr><td>" + html(formatDate(timestamp)) + "</td><td>" + html(channel) + "</td><td>" + html(model) + "</td><td title=\"" + html(event) + "\">" + html(String(event).slice(0, 20)) + "</td><td>" + html(formatNumber(tokens)) + "</td><td class=\"" + (failed ? "result-error" : successful ? "result-ok" : "") + "\">" + html(resultText) + "</td></tr>";
+      return "<tr><td>" + html(formatDate(timestamp)) + "</td><td>" + html(channel) + "</td><td>" + html(model) + "</td><td title=\"" + html(event) + "\">" + html(String(event).slice(0, 20)) + "</td><td>" + html(formatScaledNumber(tokens)) + "</td><td class=\"" + (failed ? "result-error" : successful ? "result-ok" : "") + "\">" + html(resultText) + "</td></tr>";
     }).join("");
   }
 
@@ -1112,7 +1162,7 @@
       const result = await api("/api/admin/token-estimate", { method: "POST", body: JSON.stringify({ text }) });
       const estimate = pick(result, ["estimate", "estimate_tokens", "estimated_tokens", "tokens", "token_count"], pick(result.data, ["estimate", "estimate_tokens", "estimated_tokens", "tokens"], 0));
       const method = pick(result, ["method", "provider", "note"], "仅作发送前预估");
-      elements.estimateResult.textContent = "预计 " + formatNumber(estimate) + " Token。" + (method ? " " + method : "");
+      elements.estimateResult.textContent = "预计 " + formatScaledNumber(estimate) + " Token。" + (method ? " " + method : "");
     } catch (error) {
       elements.estimateResult.className = "estimate-result error";
       elements.estimateResult.textContent = asErrorMessage(error, "Token 预估失败。");
@@ -1128,7 +1178,7 @@
 
   function tokenText(value) {
     return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
-      ? formatNumber(value) + " Token"
+      ? formatScaledNumber(value) + " Token"
       : "--";
   }
 
@@ -1147,6 +1197,7 @@
 
   function renderAdminQuota(payload) {
     if (!elements.adminQuotaResult) return;
+    state.adminQuotaPayload = payload;
     const credentials = Array.isArray(payload?.quota?.credentials) ? payload.quota.credentials : [];
     const families = Array.isArray(payload?.token_estimate?.families) ? payload.token_estimate.families : [];
     const models = credentials.flatMap((credential) => (Array.isArray(credential.models) ? credential.models : []).map((model) => ({
@@ -1204,6 +1255,16 @@
 
   function wireEvents() {
     elements.adminKey.value = state.adminKey;
+    if (elements.numberUnit) {
+      elements.numberUnit.value = state.numberUnit;
+      elements.numberUnit.addEventListener("change", () => {
+        state.numberUnit = elements.numberUnit.value || "raw";
+        setStoredNumberUnit(state.numberUnit);
+        if (state.overview) renderOverview(state.overview);
+        if (state.adminQuotaPayload) renderAdminQuota(state.adminQuotaPayload);
+        if (getAdminKey()) void loadLogs();
+      });
+    }
     if (state.adminKey) {
       sessionStorage.setItem("ag_external_gateway_admin_key", state.adminKey);
       clearSensitiveQuery(["key", "admin_key"]);
@@ -1274,9 +1335,9 @@
       copyChannelBackup(state.modalChannel);
     });
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
-    $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制用户控制台地址。"));
+    $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制朋友用户页地址。"));
     const copyModalLoginEndpoint = $("#copyModalLoginEndpoint");
-    if (copyModalLoginEndpoint) copyModalLoginEndpoint.addEventListener("click", () => copyText(elements.modalLoginEndpoint.textContent, "已复制一键登录统计页。"));
+    if (copyModalLoginEndpoint) copyModalLoginEndpoint.addEventListener("click", () => copyText(elements.modalLoginEndpoint.textContent, "已复制一键登录朋友页。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
 
     document.addEventListener("click", (event) => {
@@ -1290,9 +1351,9 @@
       const channel = card && findChannel(card.dataset.channelId);
       if (!channel) return;
       if (action.dataset.action === "copy-endpoint") copyText(action.dataset.endpoint, "已复制外接 API 地址。");
-      if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制用户控制台地址。");
+      if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制朋友用户页地址。");
       if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
-      if (action.dataset.action === "copy-login") copyText(appendKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录统计页。");
+      if (action.dataset.action === "copy-login") copyText(appendAccessKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录朋友页。");
       if (action.dataset.action === "copy-config") copyChannelBackup(channel);
       if (action.dataset.action === "test-api") testChannelApi(channel);
       if (action.dataset.action === "forget-saved-key") {
