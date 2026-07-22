@@ -142,6 +142,48 @@ h2 { font-size: 16px; line-height: 1.25; font-weight: 700; letter-spacing: 0; }
 
 .admin-key-row { display: flex; gap: 8px; }
 
+.duration-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border: 1px solid var(--line-soft);
+  border-radius: 5px;
+  padding: 8px;
+  color: var(--muted);
+  background: rgba(17, 24, 31, 0.55);
+  font-size: 12px;
+}
+.duration-control input {
+  width: 90px;
+  min-height: 32px;
+}
+.duration-control .button {
+  min-height: 32px;
+  padding-block: 6px;
+}
+.duration-presets {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.duration-presets button {
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--muted);
+  background: #11181f;
+  font-size: 11px;
+  cursor: pointer;
+}
+.duration-presets button:hover {
+  color: var(--text);
+  border-color: #4a726c;
+  background: #172a2a;
+}
+
 input,
 select,
 textarea {
