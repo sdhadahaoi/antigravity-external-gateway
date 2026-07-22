@@ -157,7 +157,15 @@ npm test
 
 ## Windows 桌面启动器
 
-`tools/windows-admin-launcher/` 中提供了一个简易 Windows 管理启动器源码。它不会打包 OAuth、上游 API Key 或 Render Secret，只连接已经部署好的外接网关。
+`tools/windows-admin-launcher/` 中提供了一个简易 Windows 管理启动器。它不会打包 OAuth、上游 API Key 或 Render Secret，只连接已经部署好的外接网关。
+
+最简单的方式是直接双击：
+
+```text
+tools\windows-admin-launcher\AntigravityGatewayAdmin.bat
+```
+
+这个 `.bat` 使用 Windows 自带 PowerShell 打开 GUI，不需要先安装 .NET SDK。
 
 可用于：
 
@@ -167,7 +175,7 @@ npm test
 - 复制朋友门户地址和 `/v1` API 地址；
 - 检查 `/health` 与管理员概览接口。
 
-构建 exe 需要安装 .NET 8 SDK：
+如果仍然想生成独立 exe，可安装 .NET 8 SDK 后运行：
 
 ```powershell
 cd tools\windows-admin-launcher

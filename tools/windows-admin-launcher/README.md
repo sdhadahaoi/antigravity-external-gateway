@@ -1,6 +1,14 @@
 # Windows Admin Launcher
 
-这个目录提供一个简易 Windows 桌面启动器源码。它不会打包 OAuth、上游 API Key 或 Render Secret，只是连接已经部署好的外接网关。
+这个目录提供一个简易 Windows 桌面启动器。它不会打包 OAuth、上游 API Key 或 Render Secret，只是连接已经部署好的外接网关。
+
+最简单的用法：
+
+```text
+双击 AntigravityGatewayAdmin.bat
+```
+
+这个 `.bat` 会使用 Windows 自带 PowerShell 打开管理 GUI，不需要先安装 .NET SDK。
 
 功能：
 
@@ -10,7 +18,7 @@
 - 复制朋友门户地址和 `/v1` API 地址；
 - 调用 `/health` 和 `/api/admin/overview` 做连通性检查。
 
-构建 exe 需要安装 .NET 8 SDK：
+如果仍然想生成独立 exe，可安装 .NET 8 SDK 后运行：
 
 ```powershell
 cd tools\windows-admin-launcher
