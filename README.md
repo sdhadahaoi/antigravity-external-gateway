@@ -108,6 +108,16 @@ URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` �
 
 ## Render 部署
 
+### Render Free 指定时段保持活跃
+
+`render.yaml` 默认使用 Render Free。免费 Web Service 在 15 分钟没有入站流量后会休眠；仓库内的 `.github/workflows/render-keepalive.yml` 会在指定时段请求现有服务的公开 `/health`，减少冷启动：
+
+- 从北京时间 `07:00` 开始，每小时只请求两次：`HH:01` 和 `HH:50`；例如 `09:01`、`09:50`；
+- 当前配置持续到北京时间 `23:50`，次日 `00:00-07:00` 允许服务休眠；
+- 工作流直接使用现有服务地址，不需要新增 Render 服务、环境变量或 GitHub Variable。
+
+提交并推送工作流后，Actions 页会按计划执行，也可以手动运行 `Render keepalive` 验证。GitHub 的 `schedule` 任务可能会延迟或偶尔漏跑，因此它不能替代付费实例的可用性保证；服务一旦因空闲休眠，下一次健康检查或用户请求仍会将它唤醒。Render Free 的本地文件系统也是临时的，继续定期从管理页导出备份。
+
 1. 将本目录作为一个独立 GitHub 仓库推送，例如 `antigravity-external-gateway`。不要把原 bridge 的 `.env`、OAuth 文件或 Render 配置复制进来。
 2. 在 Render 选择 **New + -> Blueprint**，连接这个 GitHub 仓库并使用根目录的 `render.yaml`。
 3. Render 会自动生成 `GATEWAY_ADMIN_KEY`。在服务的 Environment 页面手动填写 `UPSTREAM_BRIDGE_URL` 与 `UPSTREAM_BRIDGE_API_KEY`，并确认它们显示为 Secret。
