@@ -82,7 +82,7 @@
             </div>
             <div>
               <strong>参数简化</strong>
-              <span>创建和编辑时只保留时间、启用状态、窗口和模型；Token / 频率 / 并发不再在这里填。</span>
+              <span>窗口分配、模型、额度、并发和有效期都在同一张表单里配置。</span>
             </div>
             <div>
               <strong>地址与 Key</strong>
@@ -107,7 +107,8 @@
               <div class="model-picker" id="createAccount">
                 <span class="placeholder">先连接管理端</span>
               </div>
-              <small>朋友只能使用这里勾选的窗口；如果这些窗口都不可用，不会自动切到其他凭证。</small>
+              <label class="window-limit-field">单 OAuth 窗口最多朋友数<input name="window_friend_limit" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
+              <small>朋友只能使用这里勾选的窗口；这个人数上限按每个 OAuth 窗口分别计算，只统计启用中且未过期的朋友。留空或 0 表示不限制人数。</small>
             </fieldset>
             <fieldset class="model-fieldset">
               <legend>允许模型</legend>
@@ -154,9 +155,8 @@
                 </label>
                 <label>RPM（每分钟请求）<input name="rate_limit_per_minute" type="number" min="0" step="1" value="10" inputmode="numeric"></label>
                 <label>朋友总并发<input name="concurrency_limit" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
-                <label>单 OAuth 窗口并发<input name="window_concurrency_limit" type="number" min="0" step="1" value="1" inputmode="numeric"></label>
               </div>
-              <small>这些限制按每个朋友单独统计；单 OAuth 窗口并发会保护同一个 w1/w2 被多个朋友共用时不被打爆。</small>
+              <small>这些限制按每个朋友单独统计；朋友总并发只限制这个朋友自己的同时请求数。</small>
             </fieldset>
             <div class="form-grid two-columns">
               <label>
@@ -343,7 +343,8 @@
           <fieldset class="model-fieldset">
             <legend>指定凭证窗口（可多选）</legend>
             <div class="model-picker" id="editAccount"></div>
-            <small>朋友只能使用这里勾选的窗口；可以同时允许 w1 / w2 / w3 / 更多窗口。</small>
+            <label class="window-limit-field">单 OAuth 窗口最多朋友数<input name="window_friend_limit" type="number" min="0" step="1" inputmode="numeric"></label>
+            <small>朋友只能使用这里勾选的窗口；这个人数上限按每个 OAuth 窗口分别计算，只统计启用中且未过期的朋友。留空或 0 表示不限制人数。</small>
           </fieldset>
           <fieldset class="model-fieldset">
             <legend>允许模型</legend>
@@ -378,9 +379,8 @@
               </label>
               <label>RPM（每分钟请求）<input name="rate_limit_per_minute" type="number" min="0" step="1" inputmode="numeric"></label>
               <label>朋友总并发<input name="concurrency_limit" type="number" min="0" step="1" inputmode="numeric"></label>
-              <label>单 OAuth 窗口并发<input name="window_concurrency_limit" type="number" min="0" step="1" inputmode="numeric"></label>
             </div>
-            <small>朋友总并发限制这个朋友自己的同时请求数；单窗口并发限制同一个 OAuth 窗口被所有朋友合计占用的请求数。</small>
+            <small>朋友总并发限制这个朋友自己的同时请求数。</small>
           </fieldset>
           <div class="form-grid two-columns">
             <label>生效时间<input name="starts_at" type="datetime-local"></label>

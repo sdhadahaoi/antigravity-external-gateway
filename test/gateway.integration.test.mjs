@@ -433,6 +433,35 @@ test("gateway isolates upstream credentials and separates administrator and user
     { code: unknownSlugError.error.code, message: unknownSlugError.error.message }
   );
 
+  const limitedWindowFriend = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "window limit friend",
+      target_window_id: "w3",
+      allowed_models: ["gemini-3-5-flash-medium-ag"],
+      window_friend_limit: 1
+    })
+  });
+  assert.equal(limitedWindowFriend.status, 201);
+  const limitedWindowFriendJson = await limitedWindowFriend.json();
+  const overLimitWindowFriend = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "window limit friend 2",
+      target_window_id: "w3",
+      allowed_models: ["gemini-3-5-flash-medium-ag"],
+      window_friend_limit: 1
+    })
+  });
+  assert.equal(overLimitWindowFriend.status, 400);
+  assert.match((await overLimitWindowFriend.json()).message, /OAuth window w3/);
+  assert.equal((await adminRequest(`/api/admin/channels/${encodeURIComponent(limitedWindowFriendJson.channel.id)}`, {
+    method: "DELETE",
+    headers: adminHeaders
+  })).status, 200);
+
   const oversizedUnauthorizedChat = await userRequest(chatPath, {
     method: "POST",
     headers: invalidExternalHeaders,

@@ -469,7 +469,7 @@
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
         "<div class=\"usage-item\"><div><span>请求用量</span><strong>" + html(limitText(usage.request, requestLimit)) + "</strong></div><div class=\"meter " + meterClass(requestPercent) + "\"><span style=\"width:" + requestPercent + "%\"></span></div></div>" +
-        "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span></div>" +
+        "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span><span>窗口人数: " + html(policyLimitLabel(channelValue(channel, ["window_friend_limit"], null))) + "</span></div>" +
       "</div>" +
       "<div class=\"channel-actions\">" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
@@ -539,7 +539,7 @@
       exported_without_api_key: !savedKey,
     };
 
-    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
+    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_friend_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
       const value = channelValue(channel, [name], undefined);
       if (value !== undefined && value !== null && value !== "") backup[name] = value;
     });
@@ -645,7 +645,7 @@
       enabled: friend.enabled !== false,
     };
 
-    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
+    ["token_limit", "token_limit_per_minute", "request_limit", "rate_limit_per_minute", "concurrency_limit", "window_friend_limit", "window_concurrency_limit", "max_output_tokens"].forEach((name) => {
       if (friend[name] !== undefined && friend[name] !== null && friend[name] !== "") payload[name] = friend[name];
     });
     return payload;
@@ -886,7 +886,7 @@
     setValue("token_limit_per_minute", "20");
     setValue("rate_limit_per_minute", "10");
     setValue("concurrency_limit", "1");
-    setValue("window_concurrency_limit", "1");
+    setValue("window_friend_limit", "1");
     setValue("starts_at", localDatetimeAfter(0));
     setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
     form.elements.enabled.checked = true;
@@ -956,6 +956,7 @@
     includeOptionalNumber("request_limit");
     includeOptionalNumber("rate_limit_per_minute");
     includeOptionalNumber("concurrency_limit");
+    includeOptionalNumber("window_friend_limit");
     includeOptionalNumber("window_concurrency_limit");
     includeOptionalNumber("max_output_tokens");
 
@@ -1048,6 +1049,7 @@
     if (form.elements.request_limit) form.elements.request_limit.value = channelValue(channel, ["request_limit"], null) ?? "";
     if (form.elements.rate_limit_per_minute) form.elements.rate_limit_per_minute.value = channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null) ?? "";
     if (form.elements.concurrency_limit) form.elements.concurrency_limit.value = channelValue(channel, ["concurrency_limit"], null) ?? "";
+    if (form.elements.window_friend_limit) form.elements.window_friend_limit.value = channelValue(channel, ["window_friend_limit"], null) ?? "";
     if (form.elements.window_concurrency_limit) form.elements.window_concurrency_limit.value = channelValue(channel, ["window_concurrency_limit"], null) ?? "";
     if (form.elements.max_output_tokens) form.elements.max_output_tokens.value = channelValue(channel, ["max_output_tokens", "max_tokens"], null) ?? "";
     form.elements.starts_at.value = toDatetimeLocal(channelValue(channel, ["starts_at", "startsAt"], ""));

@@ -361,6 +361,18 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .model-choice input:checked + span { border-color: #43bba9; color: #d3fff7; background: var(--accent-soft); }
 .model-choice input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 1px; }
 .placeholder { align-self: center; color: var(--subtle); font-size: 12px; }
+.window-limit-field {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(90px, 150px);
+  gap: 9px;
+  align-items: center;
+  max-width: 360px;
+  margin-top: 8px;
+  color: #c9d5da;
+  font-size: 12px;
+  font-weight: 620;
+}
+.window-limit-field input { min-height: 34px; }
 
 .endpoint-preview {
   overflow: hidden;

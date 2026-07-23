@@ -1021,6 +1021,7 @@ function userChannelView(channel = {}) {
     rate_limit_per_minute: channel.rate_limit_per_minute ?? null,
     concurrency_limit: channel.concurrency_limit ?? null,
     window_concurrency_limit: channel.window_concurrency_limit ?? null,
+    window_friend_limit: channel.window_friend_limit ?? null,
     max_output_tokens: channel.max_output_tokens ?? null,
     starts_at: channel.starts_at || null,
     expires_at: channel.expires_at || null,
@@ -1153,6 +1154,79 @@ async function validateChannelTargets(payload = {}) {
     throw Object.assign(new Error("The selected upstream account window is not available."), { statusCode: 400 });
   }
   return targets;
+}
+
+function windowFriendLimitValue(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) {
+    throw Object.assign(new Error("OAuth window friend limit must be a non-negative integer."), { statusCode: 400 });
+  }
+  return number;
+}
+
+function enabledChannelOccupiesWindow(channel = {}) {
+  return channel.enabled !== false && !["expired", "disabled", "revoked"].includes(String(channel.status || ""));
+}
+
+function enforceWindowFriendLimit(payload = {}, currentChannelId = "") {
+  const current = currentChannelId ? store.getAdmin(currentChannelId) : null;
+  const limit = windowFriendLimitValue(
+    Object.prototype.hasOwnProperty.call(payload, "window_friend_limit")
+      ? payload.window_friend_limit
+      : current?.window_friend_limit
+  );
+  if (!limit) {
+    return;
+  }
+
+  const targets = payloadTargetWindowIds(
+    Object.prototype.hasOwnProperty.call(payload, "target_window_id") || Object.prototype.hasOwnProperty.call(payload, "target_window_ids")
+      ? payload
+      : {
+          target_window_id: current?.target_window_id,
+          target_window_ids: current?.target_window_ids,
+        }
+  );
+  if (!targets.length) {
+    return;
+  }
+
+  const currentId = String(currentChannelId || "");
+  const counts = new Map();
+  const limits = new Map();
+  const rememberLimit = (target, value) => {
+    const candidate = windowFriendLimitValue(value);
+    if (!candidate) return;
+    const previous = limits.get(target);
+    limits.set(target, previous ? Math.min(previous, candidate) : candidate);
+  };
+  for (const channel of store.list({ includeDisabled: true })) {
+    const id = String(channel.id || "");
+    if (id && id === currentId) continue;
+    if (!enabledChannelOccupiesWindow(channel)) continue;
+    for (const target of channelTargetWindowIds(channel)) {
+      counts.set(target, (counts.get(target) || 0) + 1);
+      rememberLimit(target, channel.window_friend_limit);
+    }
+  }
+
+  for (const target of targets) {
+    rememberLimit(target, limit);
+  }
+
+  for (const target of targets) {
+    const effectiveLimit = limits.get(target);
+    if (!effectiveLimit) {
+      continue;
+    }
+    const nextCount = (counts.get(target) || 0) + 1;
+    if (nextCount > effectiveLimit) {
+      throw Object.assign(new Error(`OAuth window ${target} already has ${nextCount - 1} enabled friend(s); the configured limit is ${effectiveLimit}.`), { statusCode: 400 });
+    }
+  }
 }
 
 function payloadAllowedModels(payload = {}) {
@@ -1312,6 +1386,7 @@ async function handleAdmin(req, res, url) {
     }
     body.target_window_ids = await validateChannelTargets(body);
     body.target_window_id = body.target_window_ids[0];
+    enforceWindowFriendLimit(body);
     const created = store.create(body);
     return sendJson(res, 201, { ok: true, channel: channelView(created.channel, req), api_key: created.apiKey });
   }
@@ -1355,6 +1430,7 @@ async function handleAdmin(req, res, url) {
       body.target_window_ids = await validateChannelTargets(body);
       body.target_window_id = body.target_window_ids[0];
     }
+    enforceWindowFriendLimit(body, id);
     const channel = store.update(id, body);
     if (!channel) return adminError(res, 404, "Channel not found.");
     return sendJson(res, 200, { ok: true, channel: channelView(channel, req) });
