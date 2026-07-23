@@ -149,6 +149,10 @@ function baseHost(baseUrl) {
   }
 }
 
+function isRenderManagedHost(host) {
+  return String(host || "").toLowerCase().endsWith(".onrender.com");
+}
+
 function adminBaseUrl(req) {
   return ADMIN_BASE_URL || requestOrigin(req);
 }
@@ -182,13 +186,13 @@ function configuredSurface(req) {
   const userHost = baseHost(USER_BASE_URL);
   const host = requestHost(req);
 
-  if (userHost && host === userHost && userHost !== adminHost) return "user";
-  if (host === adminHost) return "admin";
+  if (userHost && host === userHost && userHost !== adminHost && !isRenderManagedHost(userHost)) return "user";
   // A single legacy/public origin remains supported for local development and
-  // existing deployments. If only a user/API origin is configured, that origin
-  // is still isolated above while the original Render host can remain the
-  // administrator surface.
+  // existing deployments. If the user/API URL is the same Render/public URL,
+  // keep the host shared so the administrator home page remains available.
   if (!adminHost || !userHost || adminHost === userHost) return "shared";
+  if (host === adminHost) return "admin";
+  if (host === userHost) return "user";
   return "unknown";
 }
 

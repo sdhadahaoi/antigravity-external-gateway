@@ -921,3 +921,62 @@ test("gateway isolates a user-only custom host from the administrator surface", 
     headers: { ...userHostHeaders, authorization: `Bearer ${created.api_key}` }
   })).status, 200);
 });
+
+test("gateway keeps a single public Render host shared when user base url matches it", async t => {
+  const expectedUpstreamKey = "bridge-admin-secret";
+  const upstream = createServer(async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${expectedUpstreamKey}`) return json(res, 401, { error: "bad upstream auth" });
+    if (req.url === "/api/accounts") {
+      return json(res, 200, {
+        antigravity: [{ name: "private-account", window_id: "w1", has_oauth_credentials: true, has_login_credentials: true }]
+      });
+    }
+    if (req.url === "/v1/models" || req.url === "/windows/w1/v1/models") {
+      return json(res, 200, { object: "list", data: [{ id: "gemini-3-5-flash-medium-ag" }] });
+    }
+    return json(res, 404, { error: "unexpected" });
+  });
+  const upstreamPort = await listen(upstream);
+  const gatewayPort = await freePort();
+  const dataDir = mkdtempSync(join(tmpdir(), "ag-gateway-shared-host-"));
+  const gateway = spawn(process.execPath, ["server.mjs"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      PORT: String(gatewayPort),
+      GATEWAY_ADMIN_KEY: "gateway-admin-key",
+      GATEWAY_DATA_DIR: dataDir,
+      GATEWAY_USER_BASE_URL: "https://antigravity-external-gateway.onrender.com",
+      UPSTREAM_BRIDGE_URL: `http://127.0.0.1:${upstreamPort}`,
+      UPSTREAM_BRIDGE_API_KEY: expectedUpstreamKey
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(async () => {
+    if (gateway.exitCode === null) gateway.kill();
+    await close(upstream);
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const origin = `http://127.0.0.1:${gatewayPort}`;
+  await waitForHealth(origin, gateway);
+  const adminHeaders = { host: "original-render-host.gateway.test", authorization: "Bearer gateway-admin-key", "content-type": "application/json" };
+  const sharedHostHeaders = { host: "antigravity-external-gateway.onrender.com" };
+  assert.equal((await rawHttpRequest(origin, "/", { headers: sharedHostHeaders })).status, 200);
+  const createdResponse = await rawHttpRequest(origin, "/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "friend",
+      target_window_id: "w1",
+      allowed_models: ["gemini-3-5-flash-medium-ag"]
+    })
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.equal(created.channel.vanity_slug, "u1");
+  assert.equal((await rawHttpRequest(origin, "/u1/", { headers: sharedHostHeaders })).status, 200);
+  assert.equal((await rawHttpRequest(origin, "/u1/v1/models", {
+    headers: { ...sharedHostHeaders, authorization: `Bearer ${created.api_key}` }
+  })).status, 200);
+});
