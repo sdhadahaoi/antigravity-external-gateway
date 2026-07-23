@@ -323,6 +323,39 @@
     return normalizeBaseUrl(state.userBaseUrl || state.publicBaseUrl || window.location.origin);
   }
 
+  function vanityPathFor(channel, suffix) {
+    const vanitySlug = vanitySlugFor(channel);
+    if (vanitySlug) return "/" + encodeURIComponent(vanitySlug) + (suffix || "");
+    const slug = accessSlugFor(channel);
+    if (slug) return "/u/" + encodeURIComponent(slug) + (suffix || "");
+    return "";
+  }
+
+  function originForUrl(value) {
+    try {
+      return new URL(String(value || "")).origin;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function disguisedEndpointDisplay(channel, fullUrl, suffix) {
+    const path = vanityPathFor(channel, suffix);
+    const origin = originForUrl(fullUrl);
+    return {
+      primary: path || fullUrl || "",
+      secondary: origin && path ? origin + "  底层同一 Render 服务，复制按钮会复制完整可用地址" : "",
+    };
+  }
+
+  function setDisguisedEndpoint(element, channel, fullUrl, suffix) {
+    if (!element) return;
+    const display = disguisedEndpointDisplay(channel || {}, fullUrl, suffix);
+    element.textContent = display.primary;
+    element.title = fullUrl || display.primary;
+    element.dataset.copyValue = fullUrl || display.primary;
+  }
+
   function formatDate(value) {
     if (!value) return "未设置";
     const date = new Date(value);
@@ -465,6 +498,8 @@
     const models = channelAllowedModels(channel);
     const endpoint = endpointFor(channel);
     const friendPortal = friendPortalFor(channel);
+    const endpointDisplay = disguisedEndpointDisplay(channel, endpoint, "/v1");
+    const friendPortalDisplay = disguisedEndpointDisplay(channel, friendPortal, "/");
     const savedKey = savedApiKeyFor(channel);
     const expiry = channelValue(channel, ["expires_at", "expiresAt"], "");
     const disabledClass = enabled ? "" : " disabled";
@@ -479,8 +514,8 @@
       "</div>" +
       "<div class=\"key-block\"><span>朋友 API Key（" + (savedKey ? "完整 Key 已保存在本浏览器" : "完整 Key 不在服务端明文保存，可轮换生成新的") + "）</span><div class=\"key-line\"><code>" + html(savedKey ? savedKey : maskedKey(channel)) + "</code>" +
         (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
-        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>朋友用户页（统计/额度/日志都在这里）</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
-        "<div class=\"channel-endpoint\"><span>朋友 API Base URL</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
+        (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>朋友用户页（统计/额度/日志都在这里）</span><div class=\"endpoint-address\"><code title=\"" + html(friendPortal) + "\">" + html(friendPortalDisplay.primary) + "</code>" + (friendPortalDisplay.secondary ? "<small>" + html(friendPortalDisplay.secondary) + "</small>" : "") + "</div><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
+        "<div class=\"channel-endpoint\"><span>朋友 API Base URL</span><div class=\"endpoint-address\"><code title=\"" + html(endpoint) + "\">" + html(endpointDisplay.primary) + "</code>" + (endpointDisplay.secondary ? "<small>" + html(endpointDisplay.secondary) + "</small>" : "") + "</div><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
       "</div>" +
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
@@ -995,8 +1030,8 @@
     if (apiKey) rememberApiKey(channel || {}, apiKey);
     state.modalChannel = channel || null;
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
-    elements.modalEndpoint.textContent = endpointFor(channel || {});
-    elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
+    setDisguisedEndpoint(elements.modalEndpoint, channel || {}, endpointFor(channel || {}), "/v1");
+    setDisguisedEndpoint(elements.modalPortalEndpoint, channel || {}, friendPortalFor(channel || {}), "/");
     openModal(elements.keyModal);
   }
 
@@ -1410,8 +1445,8 @@
       }
       copyChannelBackup(state.modalChannel);
     });
-    $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
-    $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制朋友用户页地址。"));
+    $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.dataset.copyValue || elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
+    $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.dataset.copyValue || elements.modalPortalEndpoint.textContent, "已复制朋友用户页地址。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
 
     document.addEventListener("click", (event) => {
