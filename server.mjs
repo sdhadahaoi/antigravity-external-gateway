@@ -51,17 +51,6 @@ function adminAuthorized(req) {
   return Boolean(ADMIN_KEY && safeEqual(bearerToken(req), ADMIN_KEY));
 }
 
-function configWarnings() {
-  const warnings = [];
-  if (ADMIN_KEY && UPSTREAM_API_KEY && safeEqual(ADMIN_KEY, UPSTREAM_API_KEY)) {
-    warnings.push({
-      code: "admin_key_matches_upstream_key",
-      message: "环境变量配置风险：GATEWAY_ADMIN_KEY 和 UPSTREAM_BRIDGE_API_KEY 不能使用同一个值。请在 Render Environment 里轮换其中一个。",
-    });
-  }
-  return warnings;
-}
-
 function seedConfiguredFriends() {
   const raw = String(process.env.GATEWAY_FRIENDS_JSON || "").trim();
   if (!raw) {
@@ -1388,8 +1377,7 @@ async function handleAdmin(req, res, url) {
         user_base_url: userBaseUrl(req),
         // Retained for the current dashboard and older API consumers.
         public_base_url: userBaseUrl(req),
-        upstream_configured: upstreamConfigured(),
-        warnings: configWarnings()
+        upstream_configured: upstreamConfigured()
       },
       channels: store.list().map(channel => channelView(channel, req)),
       accounts,

@@ -103,7 +103,7 @@ https://api.example.com/<随机马甲路径>/v1
 | `GATEWAY_MAX_PENDING_BODY_READS` | 未配置通道并发上限时，单通道最多同时读取的请求正文数 | 默认 `2` |
 | `GATEWAY_MODEL_ALIASES` | 可选模型别名，供 Cherry 等 HTTP 客户端使用 | 逗号分隔 `alias:target`，例：`sonnet:claude-sonnet-4-6-thinking-ag,gemini-high:gemini-3-5-flash-high-ag` |
 
-`UPSTREAM_BRIDGE_URL` 和 `UPSTREAM_BRIDGE_API_KEY` 是唯一接触原服务的变量，应只在 Render 的 Environment 页面设置为 Secret。浏览器端、日志、JSON 导出和错误信息都不应回显它们。`GATEWAY_ADMIN_KEY` 和 `UPSTREAM_BRIDGE_API_KEY` 必须使用两个不同的值；如果复制成同一个值，管理台会显示配置风险提示，请在 Render Environment 里轮换其中一个。
+`UPSTREAM_BRIDGE_URL` 和 `UPSTREAM_BRIDGE_API_KEY` 是唯一接触原服务的变量，应只在 Render 的 Environment 页面设置为 Secret。浏览器端、日志、JSON 导出和错误信息都不应回显它们。
 
 URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` 分别优先用于管理员与用户/API 两个界面；缺少其中任一个时，才使用 `GATEWAY_PUBLIC_BASE_URL` 作为该界面的兼容回退；三个变量都未设置时，服务仅在本地或临时场景从当前请求推断地址。要获得真正分离的两个外部地址，生产环境必须同时设置前两个变量。
 

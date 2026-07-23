@@ -761,14 +761,7 @@
     try {
       const response = await api("/api/admin/overview");
       renderOverview(response);
-      const warnings = Array.isArray(response.config?.warnings) ? response.config.warnings : [];
-      if (warnings.length) {
-        const message = warnings.map((warning) => String(warning.message || warning)).join(" ");
-        setMessage(elements.adminMessage, message, "error");
-        showToast(message, "error");
-      } else {
-        setMessage(elements.adminMessage, "已连接管理端。", "success");
-      }
+      setMessage(elements.adminMessage, "已连接管理端。", "success");
       if (showFeedback) showToast("控制台已刷新。");
       await loadLogs();
       await loadAdminQuota();
