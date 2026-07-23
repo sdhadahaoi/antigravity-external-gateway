@@ -113,7 +113,7 @@ URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` �
 
 `render.yaml` 默认使用 Render Free。免费 Web Service 在 15 分钟没有入站流量后会休眠；仓库内的 `.github/workflows/render-keepalive.yml` 会在指定时段请求现有服务的公开 `/health`，减少冷启动：
 
-- 全天每 5 分钟请求一次 `/health`，尽量让 Free 实例持续运行；
+- 北京时间 06:00-24:00 每 5 分钟请求一次 `/health`，尽量让 Free 实例在白天和晚上活跃时段持续运行；
 - 工作流直接使用现有服务地址，不需要新增 Render 服务、环境变量或 GitHub Variable。
 
 提交并推送工作流后，Actions 页会按计划执行，也可以手动运行 `Render keepalive` 验证。GitHub 的 `schedule` 任务可能会延迟或偶尔漏跑，因此它不能替代付费实例的可用性保证；服务一旦因空闲休眠，下一次健康检查或用户请求仍会将它唤醒。Render Free 的本地文件系统也是临时的，继续定期从管理页导出备份。

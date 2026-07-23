@@ -2,9 +2,10 @@ name: Render keepalive
 
 on:
   schedule:
-    # Keep the Free Render instance receiving traffic all day. GitHub Actions
-    # cron runs in UTC, but this schedule is timezone-independent.
-    - cron: "*/5 * * * *"
+    # Keep the Free Render instance receiving traffic during 06:00-24:00
+    # Beijing time. GitHub Actions cron uses UTC, so we split the window.
+    - cron: "*/5 22-23 * * *"
+    - cron: "*/5 0-15 * * *"
   workflow_dispatch:
 
 permissions:
