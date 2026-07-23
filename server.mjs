@@ -1755,12 +1755,12 @@ async function route(req, res) {
     return handleAdmin(req, res, url);
   }
 
-  const userPortal = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|quota|token-estimate)$/);
+  const userPortal = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{1,63})\/user\/(overview|logs|quota|token-estimate)$/);
   if (userPortal) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
   }
-  const access = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|messages|chat\/completions)$/);
+  const access = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{1,63})\/v1\/(models|messages|chat\/completions)$/);
   if (access) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     if (access[2] === "models" && req.method === "GET") return handleExternalModels(req, res, access[1]);
@@ -1769,8 +1769,8 @@ async function route(req, res) {
     return apiError(res, 405, "Method not allowed.", "method_not_allowed");
   }
 
-  if (/^\/u\/[a-z0-9][a-z0-9_-]{2,63}\/$/.test(url.pathname) && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
-  const vanityHome = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]{2,63})\/$/);
+  if (/^\/u\/[a-z0-9][a-z0-9_-]{1,63}\/$/.test(url.pathname) && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
+  const vanityHome = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]{1,63})\/$/);
   if (vanityHome && req.method === "GET" && isUserSurface(surface) && store.getPublic(vanityHome[1]) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
   if (url.pathname === "/" && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "index.html", "text/html; charset=utf-8")) return;
   if ((url.pathname === "/assets/app.js" || url.pathname === "/app.js") && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "app.js", "application/javascript; charset=utf-8")) return;

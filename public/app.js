@@ -31,6 +31,7 @@
     createAccount: $("#createAccount"),
     createModels: $("#createModels"),
     createApiKey: $("#createApiKey"),
+    createVanitySlug: $("#createVanitySlug"),
     createPortalPreview: $("#createPortalPreview"),
     createEndpointPreview: $("#createEndpointPreview"),
     createDurationDays: $("#createDurationDays"),
@@ -55,6 +56,7 @@
     editForm: $("#editChannelForm"),
     editAccount: $("#editAccount"),
     editModels: $("#editModels"),
+    editVanitySlug: $("#editVanitySlug"),
     editDurationDays: $("#editDurationDays"),
     applyEditDuration: $("#applyEditDuration"),
     editMessage: $("#editMessage"),
@@ -669,7 +671,7 @@
   function importPayloadForFriend(friend) {
     const label = String(friend.label || friend.name || "").trim();
     const accessSlug = accessSlugOrNull(friend.access_slug || friend.accessSlug);
-    const vanitySlug = accessSlugOrNull(friend.vanity_slug || friend.vanitySlug || friend.public_path_slug);
+    const vanitySlug = publicPathOrNull(friend.vanity_slug || friend.vanitySlug || friend.public_path_slug);
     const apiKey = valueOrNull(friend.api_key || friend.apiKey);
     const targetWindows = Array.isArray(friend.target_window_ids)
       ? friend.target_window_ids.map((item) => String(item || "").trim()).filter(Boolean)
@@ -835,9 +837,45 @@
     const slug = String(value == null ? "" : value).trim().toLowerCase();
     if (!slug) return null;
     if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
-      throw new Error("用户地址标识只能使用 3-64 位小写字母、数字、连字符或下划线。");
+      throw new Error("内部短地址只能使用 3-64 位小写字母、数字、连字符或下划线。");
     }
     return slug;
+  }
+
+  function publicPathOrNull(value) {
+    const slug = String(value == null ? "" : value).trim().toLowerCase();
+    if (!slug) return null;
+    if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(slug)) {
+      throw new Error("朋友编号路径只能使用 2-64 位小写字母、数字、连字符或下划线，例如 u1、u2、u3。");
+    }
+    return slug;
+  }
+
+  function usedPublicPaths(exceptChannelId) {
+    const used = new Set();
+    (state.channels || []).forEach((channel) => {
+      const id = String(pick(channel, ["id", "public_id", "channel_id"], "") || "");
+      if (exceptChannelId && id === String(exceptChannelId)) return;
+      [vanitySlugFor(channel), accessSlugFor(channel), id].filter(Boolean).forEach((value) => used.add(String(value).toLowerCase()));
+    });
+    return used;
+  }
+
+  function nextPublicPath(exceptChannelId) {
+    const used = usedPublicPaths(exceptChannelId);
+    for (let index = 1; index < Number.MAX_SAFE_INTEGER; index += 1) {
+      const candidate = "u" + index;
+      if (!used.has(candidate)) return candidate;
+    }
+    return "u_" + randomToken(12).toLowerCase();
+  }
+
+  function fillNextPublicPath(input, exceptChannelId) {
+    input.value = nextPublicPath(exceptChannelId);
+    input.focus();
+    if (input && input.form && input.form.id === "createChannelForm") {
+      updateCreateEndpointPreview();
+    }
   }
 
   function randomAccessSlug() {
@@ -926,6 +964,7 @@
     const onlyEmpty = Boolean(options.onlyEmpty);
     const form = elements.createForm;
     const slug = randomAccessSlug();
+    const publicSlug = nextPublicPath();
     const suffix = slug.slice(2, 10);
     const setValue = (name, value) => {
       const input = form.elements[name];
@@ -934,6 +973,7 @@
     };
 
     setValue("label", "朋友-" + suffix);
+    setValue("vanity_slug", publicSlug);
     setValue("access_slug", slug);
     setValue("api_key", randomApiKey());
     setValue("token_limit", "100");
@@ -958,19 +998,20 @@
 
   function updateCreateEndpointPreview() {
     if (!elements.createEndpointPreview && !elements.createPortalPreview) return;
-    const slug = String(elements.createForm.elements.access_slug?.value || "").trim().toLowerCase();
-    if (!slug) {
+    const publicSlug = String(elements.createForm.elements.vanity_slug?.value || "").trim().toLowerCase();
+    if (!publicSlug) {
       if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成专属路径";
       if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成专属路径";
       return;
     }
-    if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
+    if (!/^[a-z0-9][a-z0-9_-]{1,63}$/.test(publicSlug)) {
       if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：路径标识格式不正确";
       if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：路径标识格式不正确";
       return;
     }
-    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成专属路径";
-    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成专属路径";
+    const base = userBaseUrl();
+    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：" + base + "/" + publicSlug + "/";
+    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：" + base + "/" + publicSlug + "/v1";
   }
 
   function collectPayload(form, modelContainer) {
@@ -986,6 +1027,7 @@
     const payload = {
       label,
       access_slug: accessSlugOrNull(values.get("access_slug")),
+      vanity_slug: publicPathOrNull(values.get("vanity_slug")),
       target_window_id: targetWindows[0],
       target_window_ids: targetWindows,
       allowed_models: allowedModels,
@@ -1094,6 +1136,7 @@
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     form.elements.id.value = id;
     form.elements.label.value = pick(channel, ["label", "name"], "");
+    form.elements.vanity_slug.value = vanitySlugFor(channel);
     form.elements.access_slug.value = accessSlugFor(channel);
     renderAccountPicker(elements.editAccount, channelTargetWindows(channel));
     renderModelPicker(elements.editModels, channelAllowedModels(channel));
@@ -1416,11 +1459,20 @@
       });
     });
     $("#randomCreateAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.createForm.elements.access_slug));
+    $("#nextCreateVanitySlug").addEventListener("click", () => fillNextPublicPath(elements.createForm.elements.vanity_slug));
     $("#randomCreateApiKey").addEventListener("click", () => fillRandomApiKey(elements.createApiKey));
+    $("#nextEditVanitySlug").addEventListener("click", () => fillNextPublicPath(elements.editForm.elements.vanity_slug, elements.editForm.elements.id.value));
     $("#randomEditAccessSlug").addEventListener("click", () => fillRandomAccessSlug(elements.editForm.elements.access_slug));
+    elements.createForm.elements.vanity_slug.addEventListener("input", () => {
+      elements.createForm.elements.vanity_slug.value = elements.createForm.elements.vanity_slug.value.toLowerCase();
+      updateCreateEndpointPreview();
+    });
     elements.createForm.elements.access_slug.addEventListener("input", () => {
       elements.createForm.elements.access_slug.value = elements.createForm.elements.access_slug.value.toLowerCase();
       updateCreateEndpointPreview();
+    });
+    elements.editForm.elements.vanity_slug.addEventListener("input", () => {
+      elements.editForm.elements.vanity_slug.value = elements.editForm.elements.vanity_slug.value.toLowerCase();
     });
     elements.editForm.elements.access_slug.addEventListener("input", () => {
       elements.editForm.elements.access_slug.value = elements.editForm.elements.access_slug.value.toLowerCase();

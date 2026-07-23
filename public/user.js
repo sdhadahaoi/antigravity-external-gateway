@@ -1,8 +1,8 @@
 (function () {
   "use strict";
 
-  const legacyMatch = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/);
-  const vanityMatch = location.pathname.match(/^\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/);
+  const legacyMatch = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{1,63})(?:\/|$)/);
+  const vanityMatch = location.pathname.match(/^\/([a-z0-9][a-z0-9_-]{1,63})(?:\/|$)/);
   const accessSlug = legacyMatch?.[1] || vanityMatch?.[1] || "";
   const accessRoot = accessSlug
     ? legacyMatch

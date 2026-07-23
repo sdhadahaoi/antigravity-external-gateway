@@ -95,12 +95,20 @@
               <input name="label" maxlength="80" required placeholder="例如：朋友 - 开发测试">
             </label>
             <div class="form-field access-slug-field">
-              <label for="createAccessSlug">用户地址标识</label>
+              <label for="createVanitySlug">朋友编号路径</label>
+              <div class="slug-control">
+                <input id="createVanitySlug" name="vanity_slug" type="text" minlength="2" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{1,63}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="留空 = 自动编号：第 1 个 u1，第 2 个 u2，第 n 个 un">
+                <button class="button button-quiet" id="nextCreateVanitySlug" type="button" title="使用下一个朋友编号路径">自动编号</button>
+              </div>
+              <small>这就是发给朋友和填入 Cherry 的路径，例如 `https://api.antigravity.com/u1/v1`。</small>
+            </div>
+            <div class="form-field access-slug-field">
+              <label for="createAccessSlug">内部短地址</label>
               <div class="slug-control">
                 <input id="createAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="留空 = 服务端随机生成">
-                <button class="button button-quiet" id="randomCreateAccessSlug" type="button" title="生成随机用户地址标识">随机生成</button>
+                <button class="button button-quiet" id="randomCreateAccessSlug" type="button" title="生成随机内部短地址">随机生成</button>
               </div>
-              <small>仅使用小写字母、数字、连字符或下划线；服务端会检查唯一性。</small>
+              <small>底层兼容用，不需要发给朋友；留空即可由服务端随机生成。</small>
             </div>
             <fieldset class="model-fieldset">
               <legend>指定凭证窗口（可多选）</legend>
@@ -333,12 +341,20 @@
             <input name="label" maxlength="80" required>
           </label>
           <div class="form-field access-slug-field">
-            <label for="editAccessSlug">用户地址标识</label>
+            <label for="editVanitySlug">朋友编号路径</label>
+            <div class="slug-control">
+              <input id="editVanitySlug" name="vanity_slug" type="text" minlength="2" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{1,63}" autocomplete="off" autocapitalize="none" spellcheck="false">
+              <button class="button button-quiet" id="nextEditVanitySlug" type="button" title="使用下一个朋友编号路径">自动编号</button>
+            </div>
+            <small>默认按朋友顺序使用 u1、u2、u3……；修改后，朋友和 Cherry 需要改用新的 `https://朋友域名/uN/v1`。</small>
+          </div>
+          <div class="form-field access-slug-field">
+            <label for="editAccessSlug">内部短地址</label>
             <div class="slug-control">
               <input id="editAccessSlug" name="access_slug" type="text" minlength="3" maxlength="64" pattern="[a-z0-9][a-z0-9_\-]{2,63}" autocomplete="off" autocapitalize="none" spellcheck="false">
-              <button class="button button-quiet" id="randomEditAccessSlug" type="button" title="生成新的随机用户地址标识">随机生成</button>
+              <button class="button button-quiet" id="randomEditAccessSlug" type="button" title="生成新的随机内部短地址">随机生成</button>
             </div>
-            <small>留空后由服务端生成新的随机地址；修改后旧的用户地址将失效。</small>
+            <small>底层兼容用，不需要发给朋友；修改后旧的 `/u/<内部短地址>` 兼容入口会失效。</small>
           </div>
           <fieldset class="model-fieldset">
             <legend>指定凭证窗口（可多选）</legend>

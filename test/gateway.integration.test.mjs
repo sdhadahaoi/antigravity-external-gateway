@@ -365,11 +365,11 @@ test("gateway isolates upstream credentials and separates administrator and user
   const created = await createdResponse.json();
   assert.match(created.api_key, /^agk_/);
   assert.match(created.channel.access_slug, /^[a-z0-9][a-z0-9_-]{2,63}$/);
-  assert.match(created.channel.vanity_slug, /^m_[a-f0-9]{20}$/);
+  assert.equal(created.channel.vanity_slug, "u2");
   assert.notEqual(created.channel.access_slug, created.channel.id);
   assert.equal(created.channel.access_slug.includes("agc_"), false);
-  assert.equal(created.channel.endpoint, `${userBaseUrl}/${created.channel.vanity_slug}/v1`);
-  assert.equal(created.channel.friend_portal_url, `${userBaseUrl}/${created.channel.vanity_slug}/`);
+  assert.equal(created.channel.endpoint, `${userBaseUrl}/u2/v1`);
+  assert.equal(created.channel.friend_portal_url, `${userBaseUrl}/u2/`);
   assert.equal(created.channel.endpoint.includes("/u/"), false);
   assert.equal(created.channel.endpoint.includes(adminBaseUrl), false);
   assert.equal(created.channel.endpoint.includes(created.channel.id), false);
@@ -407,6 +407,23 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(userCss.includes("[hidden]"), true);
   assert.equal((await userRequest("/assets/user.js")).status, 200);
   assert.equal((await userRequest("/assets/user.css")).status, 200);
+
+  const secondResponse = await adminRequest("/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "friend two",
+      vanity_slug: "u3",
+      target_window_id: "w1",
+      allowed_models: ["claude-sonnet-4-6-thinking-ag"]
+    })
+  });
+  assert.equal(secondResponse.status, 201);
+  const second = await secondResponse.json();
+  assert.equal(second.channel.vanity_slug, "u3");
+  assert.equal(second.channel.endpoint, `${userBaseUrl}/u3/v1`);
+  assert.equal((await userRequest(`/u3/`)).status, 200);
+  assert.equal((await userRequest(`/u3/v1/models`, { headers: { authorization: `Bearer ${second.api_key}` } })).status, 200);
 
   const ownerModelsOnUserHost = await userRequest("/v1/models", {
     headers: { authorization: `Bearer ${expectedUpstreamKey}` }
@@ -892,14 +909,15 @@ test("gateway isolates a user-only custom host from the administrator surface", 
   });
   assert.equal(createdResponse.status, 201);
   const created = await createdResponse.json();
-  assert.equal(created.channel.endpoint, `https://friends.gateway.test/${created.channel.vanity_slug}/v1`);
-  assert.equal(created.channel.friend_portal_url, `https://friends.gateway.test/${created.channel.vanity_slug}/`);
+  assert.equal(created.channel.vanity_slug, "u1");
+  assert.equal(created.channel.endpoint, `https://friends.gateway.test/u1/v1`);
+  assert.equal(created.channel.friend_portal_url, `https://friends.gateway.test/u1/`);
   assert.equal(created.channel.endpoint.includes("original-render-host.gateway.test"), false);
 
   assert.equal((await rawHttpRequest(origin, "/", { headers: userHostHeaders })).status, 404);
   assert.equal((await rawHttpRequest(origin, "/api/admin/overview", { headers: { ...userHostHeaders, authorization: "Bearer gateway-admin-key" } })).status, 404);
-  assert.equal((await rawHttpRequest(origin, `/${created.channel.vanity_slug}/`, { headers: userHostHeaders })).status, 200);
-  assert.equal((await rawHttpRequest(origin, `/${created.channel.vanity_slug}/v1/models`, {
+  assert.equal((await rawHttpRequest(origin, `/u1/`, { headers: userHostHeaders })).status, 200);
+  assert.equal((await rawHttpRequest(origin, `/u1/v1/models`, {
     headers: { ...userHostHeaders, authorization: `Bearer ${created.api_key}` }
   })).status, 200);
 });
