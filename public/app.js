@@ -125,7 +125,8 @@
   function channelReferences(channel) {
     const id = String(pick(channel, ["id", "public_id", "channel_id"], "") || "").trim();
     const slug = accessSlugFor(channel);
-    return [id, slug].filter(Boolean);
+    const vanitySlug = vanitySlugFor(channel);
+    return [id, slug, vanitySlug].filter(Boolean);
   }
 
   function rememberApiKey(channel, apiKey) {
@@ -136,6 +137,7 @@
     const record = {
       api_key: cleanKey,
       access_slug: accessSlugFor(channel || {}),
+      vanity_slug: vanitySlugFor(channel || {}),
       label: pick(channel, ["label", "name"], ""),
       saved_at: new Date().toISOString(),
     };
@@ -284,10 +286,12 @@
   }
 
   function endpointFor(channel) {
-    const slug = accessSlugFor(channel);
-    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/v1";
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
     if (typeof endpoint === "string" && endpoint) return endpoint;
+    const vanitySlug = vanitySlugFor(channel);
+    if (vanitySlug) return userBaseUrl() + "/" + encodeURIComponent(vanitySlug) + "/v1";
+    const slug = accessSlugFor(channel);
+    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/v1";
     if (endpoint && typeof endpoint === "object") {
       const direct = pick(endpoint, ["api_url", "url", "endpoint"], "");
       if (direct) return direct;
@@ -296,10 +300,12 @@
   }
 
   function friendPortalFor(channel) {
-    const slug = accessSlugFor(channel);
-    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
     const direct = pick(channel, ["friend_portal_url", "external_test_page_url", "portal_url", "user_portal_url"], "");
     if (direct) return direct;
+    const vanitySlug = vanitySlugFor(channel);
+    if (vanitySlug) return userBaseUrl() + "/" + encodeURIComponent(vanitySlug) + "/";
+    const slug = accessSlugFor(channel);
+    if (slug) return userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
     const endpoint = pick(channel, ["endpoint", "public_endpoint"], "");
     if (endpoint && typeof endpoint === "object") {
       const fromEndpoint = pick(endpoint, ["friend_portal_url", "portal_url", "test_page_url", "user_portal_url"], "");
@@ -430,6 +436,10 @@
     return String(channelValue(channel, ["access_slug", "accessSlug"], "") || "").trim();
   }
 
+  function vanitySlugFor(channel) {
+    return String(channelValue(channel, ["vanity_slug", "vanitySlug", "public_path_slug"], "") || "").trim();
+  }
+
   function policyLimitLabel(value) {
     return hasLimit(value) ? String(value) : "不限制";
   }
@@ -443,6 +453,7 @@
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     const publicId = pick(channel, ["public_id", "id", "channel_id"], id);
     const accessSlug = accessSlugFor(channel);
+    const vanitySlug = vanitySlugFor(channel);
     const label = pick(channel, ["label", "name"], "未命名通道");
     const enabled = channelEnabled(channel);
     const usage = channelUsage(channel);
@@ -462,7 +473,7 @@
       "<div class=\"channel-identity\">" +
         "<div class=\"channel-title-row\"><h3 title=\"" + html(label) + "\">" + html(label) + "</h3>" +
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
-        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友短地址: <code>" + html(accessSlug || publicId) + "</code></span>" +
+        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友马甲路径: <code>" + html(vanitySlug || accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未配置（全部禁止）") + "</span></div>" +
       "</div>" +
@@ -532,6 +543,7 @@
     const backup = {
       label: pick(channel, ["label", "name"], ""),
       access_slug: accessSlugFor(channel),
+      vanity_slug: vanitySlugFor(channel),
       api_key: savedKey || null,
       target_window_id: targetWindows[0] || "",
       target_window_ids: targetWindows,
@@ -622,6 +634,7 @@
   function importPayloadForFriend(friend) {
     const label = String(friend.label || friend.name || "").trim();
     const accessSlug = accessSlugOrNull(friend.access_slug || friend.accessSlug);
+    const vanitySlug = accessSlugOrNull(friend.vanity_slug || friend.vanitySlug || friend.public_path_slug);
     const apiKey = valueOrNull(friend.api_key || friend.apiKey);
     const targetWindows = Array.isArray(friend.target_window_ids)
       ? friend.target_window_ids.map((item) => String(item || "").trim()).filter(Boolean)
@@ -641,6 +654,7 @@
     const payload = {
       label: label || "朋友-" + accessSlug,
       access_slug: accessSlug,
+      vanity_slug: vanitySlug,
       api_key: apiKey,
       target_window_id: targetWindows[0],
       target_window_ids: targetWindows,
@@ -911,8 +925,8 @@
     if (!elements.createEndpointPreview && !elements.createPortalPreview) return;
     const slug = String(elements.createForm.elements.access_slug?.value || "").trim().toLowerCase();
     if (!slug) {
-      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：先生成用户地址标识";
-      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：先生成用户地址标识";
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成随机马甲路径";
+      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成随机马甲路径";
       return;
     }
     if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
@@ -920,9 +934,8 @@
       if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：用户地址标识格式不正确";
       return;
     }
-    const userRoot = userBaseUrl() + "/u/" + encodeURIComponent(slug) + "/";
-    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：" + userRoot;
-    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：" + userRoot + "v1";
+    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成随机马甲路径";
+    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成随机马甲路径";
   }
 
   function collectPayload(form, modelContainer) {

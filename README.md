@@ -29,7 +29,7 @@ Antigravity
 网关可为每个外接用户生成不同的 API 路径和 Key。路径只是网关的虚拟入口，例如：
 
 ```text
-https://api.example.com/u/<朋友专属短地址>/v1
+https://api.example.com/<随机马甲路径>/v1
 ```
 
 该地址会转发到真实上游，但绝不是原服务地址的重定向或泄露。外接 Key 也不会等同于上游 Key。
@@ -50,8 +50,8 @@ https://api.example.com/u/<朋友专属短地址>/v1
 
 启动后使用 `GATEWAY_ADMIN_KEY` 登录管理界面。管理界面应提供：
 
-- 一键随机填满新建通道表单，包括通道名称、朋友短地址、完整 API Key、完整 API 地址预览和生效/失效时间；
-- 管理网页可随机生成真正可用的外接 API Key；创建通道后，服务端只保存 Key 的 hash，并把朋友短地址、时间策略、用量和日志持久化保存；
+- 一键随机填满新建通道表单，包括通道名称、真实短地址、随机马甲路径、完整 API Key、完整 API 地址和生效/失效时间；
+- 管理网页可随机生成真正可用的外接 API Key；创建通道后，服务端只保存 Key 的 hash，并把真实短地址、马甲路径、时间策略、用量和日志持久化保存；
 - 完整外接 API Key 会保存在当前管理员浏览器中，方便以后复制完整 Key；
 - 创建、编辑、禁用、删除和轮换外接 Key；
 - 选择任意已配置的账号窗口；
@@ -62,22 +62,22 @@ https://api.example.com/u/<朋友专属短地址>/v1
 
 管理页右侧会保留并显示多个朋友的信息。每个朋友对应一张卡片，包含朋友名称、指定凭证窗口、完整朋友用户页地址、完整 API Base URL、API Key 状态、用量和操作按钮。朋友配置、地址标识、用量和日志会保存在服务端数据目录；完整 API Key 不会在服务端明文保存，只会在创建/轮换时返回一次，并由当前管理员浏览器本地保存，方便同一台电脑继续复制给朋友。如果换电脑或清空浏览器数据，可以对该朋友执行“轮换 Key”生成新的完整 Key。
 
-如果部署在 Render Free，必须把朋友配置备份当成“保命包”：创建弹窗里有“复制此朋友完整配置”，朋友列表顶部有“复制全部配置 / 下载备份 / 导入恢复”。备份 JSON 会包含朋友短地址和完整 `agk_...` API Key；Render Free 重启导致本地数据丢失后，使用“导入恢复”即可重新创建同样短地址和同样 Key，朋友原来的 API Base URL 与 API Key 就能继续使用。这个备份包含敏感 Key，只能由管理员自己保存。
+如果部署在 Render Free，必须把朋友配置备份当成“保命包”：创建弹窗里有“复制此朋友完整配置”，朋友列表顶部有“复制全部配置 / 下载备份 / 导入恢复”。备份 JSON 会包含真实短地址、随机马甲路径和完整 `agk_...` API Key；Render Free 重启导致本地数据丢失后，使用“导入恢复”即可重新创建同样马甲地址和同样 Key，朋友原来的 API Base URL 与 API Key 就能继续使用。这个备份包含敏感 Key，只能由管理员自己保存。
 
-这里的“随机虚拟端点”指的是朋友专属短地址，例如 `/u/u_rm43p3oyjapo2jdl/`。整站域名必须来自 Render 默认域名或你已经绑定的自定义域名，不能随机生成一个互联网上真实可访问的新域名。管理网页点“随机填满”会先生成一套可提交的随机配置；点“创建并保存”后，这套朋友短地址和 API Key 才会真正保存并可登录。管理弹窗会给出朋友用户页和完整 API Base URL，管理员应分别把这两个地址和 API Key 发给朋友。
+这里的“随机虚拟端点”指的是朋友看到的马甲路径，例如 `/m_4f2a9c0d7e18ab34c901/`。底层仍映射到该朋友真实短地址；旧 `/u/<真实短地址>/...` 路径继续兼容，但管理台新复制给朋友的用户页和 API Base URL 默认使用马甲路径。整站域名必须来自 Render 默认域名或你已经绑定的自定义域名，不能随机生成一个互联网上真实可访问的新域名。
 
 ## 两套界面
 
 - 管理员界面：`https://admin.example.com/`。使用 `GATEWAY_ADMIN_KEY`，可创建/编辑/停用/轮换通道，选择任意已绑定账号的窗口，并查看全部通道的额度和日志。
-- 用户界面：`https://api.example.com/u/<朋友专属短地址>/`。朋友使用自己的外接 API Key 登录，只能查看该通道的额度、有效期、模型、个人日志和 Token 预估，并可进行模型测试或最多三次总尝试的手动重试。管理员可在创建或编辑通道时自定义该短地址，或让网关生成一个不可预测的随机地址。
+- 用户界面：`https://api.example.com/<随机马甲路径>/`。朋友使用自己的外接 API Key 登录，只能查看该通道的额度、有效期、模型、个人日志和 Token 预估，并可进行模型测试或最多三次总尝试的手动重试。
 
 网页支持便捷登录管理员界面：管理员可用 `https://admin.example.com/?key=<GATEWAY_ADMIN_KEY>` 打开后自动连接。朋友用户页需要手动输入朋友 API Key。Windows 启动器只是可选辅助工具；正常使用只需要打开管理员页和朋友用户页这两个固定网页。
 
 生产环境应使用两个不同的自定义域名，并将它们绑定到**同一个** Render Web Service：`admin.example.com` 仅提供管理员界面，`api.example.com` 仅提供用户门户和外接 API。创建通道后，管理后台生成并复制给朋友的地址固定为用户/API 域名，例如：
 
 ```text
-朋友门户：https://api.example.com/u/u_9d7a2e6c4b18/
-模型 API：https://api.example.com/u/u_9d7a2e6c4b18/v1
+朋友门户：https://api.example.com/m_4f2a9c0d7e18ab34c901/
+模型 API：https://api.example.com/m_4f2a9c0d7e18ab34c901/v1
 ```
 
 不要把管理员域名、管理员 Key 或 Render Dashboard 地址发给朋友。域名分离只是降低误发现的机会；管理员路由仍必须由服务端的管理员鉴权和主机路由限制保护，不能把地址保密当作权限控制。
@@ -135,7 +135,7 @@ URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` �
 1. 每次创建或轮换朋友 Key 后，马上点弹窗里的“复制此朋友完整配置”；
 2. 创建多个朋友后，点朋友列表顶部的“下载备份”；
 3. 如果 Render Free 重启后朋友列表变空，登录管理页，点“导入恢复”，选择备份 JSON；
-4. 恢复完成后，原来的 `https://.../u/<短地址>/v1` 和 `agk_...` Key 会重新生效。
+4. 恢复完成后，原来的 `https://.../<随机马甲路径>/v1` 和 `agk_...` Key 会重新生效。
 
 如果以后需要自动长期保存统计和日志，可升级带 Persistent Disk 的实例，或改接 Supabase/Neon 等外部数据库。
 
@@ -153,7 +153,7 @@ GATEWAY_ADMIN_BASE_URL=https://admin.example.com
 GATEWAY_USER_BASE_URL=https://api.example.com
 ```
 
-两个域名仍指向同一个 Render 服务和同一份持久化数据，不需要创建两台服务，也不会复制 OAuth 或上游配置。管理员在 `https://admin.example.com/` 创建通道后，网关会只生成 `https://api.example.com/u/<朋友专属短地址>/...` 形式的朋友门户与 API 地址。短地址可由管理员指定，也可留空让服务端随机生成；服务端会拒绝重复短地址。旧版只有一个域名时，可暂时只设置 `GATEWAY_PUBLIC_BASE_URL`；这会让两个界面共用同一基础地址，不能提供域名级隔离。
+两个域名仍指向同一个 Render 服务和同一份持久化数据，不需要创建两台服务，也不会复制 OAuth 或上游配置。管理员在 `https://admin.example.com/` 创建通道后，网关会生成 `https://api.example.com/<随机马甲路径>/...` 形式的朋友门户与 API 地址。真实短地址仍用于底层映射和旧链接兼容；服务端会拒绝重复短地址和重复马甲路径。旧版只有一个域名时，可暂时只设置 `GATEWAY_PUBLIC_BASE_URL`；这会让两个界面共用同一基础地址，不能提供域名级隔离。
 
 ## 本地运行
 
@@ -251,8 +251,8 @@ GATEWAY_USER_BASE_URL=https://api.example.com
 这样管理后台创建通道后，生成给朋友的地址会是：
 
 ```text
-朋友控制台：https://api.example.com/u/<朋友短地址>/
-API Base URL：https://api.example.com/u/<朋友短地址>/v1
+朋友控制台：https://api.example.com/<随机马甲路径>/
+API Base URL：https://api.example.com/<随机马甲路径>/v1
 ```
 
 管理员自己访问：
@@ -265,8 +265,8 @@ https://admin.example.com/
 
 ```text
 管理员：https://xxx.onrender.com/
-朋友：https://xxx.onrender.com/u/<朋友短地址>/
-API：https://xxx.onrender.com/u/<朋友短地址>/v1
+朋友：https://xxx.onrender.com/<随机马甲路径>/
+API：https://xxx.onrender.com/<随机马甲路径>/v1
 ```
 
 但这种单域名模式下，用户理论上能猜到同一个站点的根路径，所以正式给朋友使用时更推荐双域名。双域名模式下，用户域名访问管理接口会返回 404，管理员域名访问用户接口也会返回 404。

@@ -1,8 +1,14 @@
 (function () {
   "use strict";
 
-  const accessSlug = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/)?.[1] || "";
-  const accessRoot = accessSlug ? "/u/" + encodeURIComponent(accessSlug) : "";
+  const legacyMatch = location.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/);
+  const vanityMatch = location.pathname.match(/^\/([a-z0-9][a-z0-9_-]{2,63})(?:\/|$)/);
+  const accessSlug = legacyMatch?.[1] || vanityMatch?.[1] || "";
+  const accessRoot = accessSlug
+    ? legacyMatch
+      ? "/u/" + encodeURIComponent(accessSlug)
+      : "/" + encodeURIComponent(accessSlug)
+    : "";
   const sessionKeyName = "ag_external_gateway_user_key:" + accessSlug;
   const state = {
     overview: null,

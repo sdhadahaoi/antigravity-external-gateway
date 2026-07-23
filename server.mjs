@@ -338,12 +338,14 @@ function upstreamWindowPath(windowId, suffix) {
 function channelView(channel, req) {
   const publicId = String(channel.public_id || channel.publicId || channel.id || "");
   const accessSlug = String(channel.access_slug || publicId || "");
-  const root = `${userBaseUrl(req)}/u/${encodeURIComponent(accessSlug)}`;
+  const vanitySlug = String(channel.vanity_slug || accessSlug || publicId || "");
+  const root = `${userBaseUrl(req)}/${encodeURIComponent(vanitySlug)}`;
   const base = `${root}/v1`;
   return {
     ...channel,
     public_id: publicId,
     access_slug: accessSlug,
+    vanity_slug: vanitySlug,
     endpoint: base,
     models_endpoint: `${base}/models`,
     chat_endpoint: `${base}/chat/completions`,
@@ -1751,12 +1753,12 @@ async function route(req, res) {
     return handleAdmin(req, res, url);
   }
 
-  const userPortal = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|quota|token-estimate)$/);
+  const userPortal = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{2,63})\/user\/(overview|logs|quota|token-estimate)$/);
   if (userPortal) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     return handleUserPortalApi(req, res, url, userPortal[1], userPortal[2]);
   }
-  const access = url.pathname.match(/^\/u\/([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|messages|chat\/completions)$/);
+  const access = url.pathname.match(/^\/(?:u\/)?([a-z0-9][a-z0-9_-]{2,63})\/v1\/(models|messages|chat\/completions)$/);
   if (access) {
     if (!isUserSurface(surface)) return sendJson(res, 404, { ok: false, message: "Not found." });
     if (access[2] === "models" && req.method === "GET") return handleExternalModels(req, res, access[1]);
@@ -1766,6 +1768,8 @@ async function route(req, res) {
   }
 
   if (/^\/u\/[a-z0-9][a-z0-9_-]{2,63}\/$/.test(url.pathname) && req.method === "GET" && isUserSurface(surface) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
+  const vanityHome = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]{2,63})\/$/);
+  if (vanityHome && req.method === "GET" && isUserSurface(surface) && store.getPublic(vanityHome[1]) && staticFile(res, "user.html", "text/html; charset=utf-8")) return;
   if (url.pathname === "/" && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "index.html", "text/html; charset=utf-8")) return;
   if ((url.pathname === "/assets/app.js" || url.pathname === "/app.js") && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "app.js", "application/javascript; charset=utf-8")) return;
   if ((url.pathname === "/assets/styles.css" || url.pathname === "/styles.css") && req.method === "GET" && isAdminSurface(surface) && staticFile(res, "styles.css", "text/css; charset=utf-8")) return;

@@ -365,10 +365,12 @@ test("gateway isolates upstream credentials and separates administrator and user
   const created = await createdResponse.json();
   assert.match(created.api_key, /^agk_/);
   assert.match(created.channel.access_slug, /^[a-z0-9][a-z0-9_-]{2,63}$/);
+  assert.match(created.channel.vanity_slug, /^m_[a-f0-9]{20}$/);
   assert.notEqual(created.channel.access_slug, created.channel.id);
   assert.equal(created.channel.access_slug.includes("agc_"), false);
-  assert.equal(created.channel.endpoint, `${userBaseUrl}/u/${created.channel.access_slug}/v1`);
-  assert.equal(created.channel.friend_portal_url, `${userBaseUrl}/u/${created.channel.access_slug}/`);
+  assert.equal(created.channel.endpoint, `${userBaseUrl}/${created.channel.vanity_slug}/v1`);
+  assert.equal(created.channel.friend_portal_url, `${userBaseUrl}/${created.channel.vanity_slug}/`);
+  assert.equal(created.channel.endpoint.includes("/u/"), false);
   assert.equal(created.channel.endpoint.includes(adminBaseUrl), false);
   assert.equal(created.channel.endpoint.includes(created.channel.id), false);
   assert.equal(JSON.stringify(created.channel).includes(created.api_key), false);
@@ -378,6 +380,7 @@ test("gateway isolates upstream credentials and separates administrator and user
   const chatPath = pathFromPublicUrl(created.channel.chat_endpoint);
   const userPageResponse = await userRequest(userPortalPath);
   assert.equal(userPageResponse.status, 200);
+  assert.equal((await userRequest(`/u/${created.channel.access_slug}/`)).status, 200);
   const userPage = await userPageResponse.text();
   assert.equal(userPage.includes("ACCESS CONSOLE"), true);
   assert.equal(userPage.includes("GATEWAY_ADMIN_KEY"), false);
@@ -576,7 +579,8 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(completionPayload.usage.estimated, true);
   assert.ok(completionPayload.usage.total_tokens > 0);
 
-  const streamChatPath = `/u/${encodeURIComponent(created.channel.access_slug)}/v1/chat/completions`;
+  const streamChatPath = `/${encodeURIComponent(created.channel.vanity_slug)}/v1/chat/completions`;
+  const legacyStreamChatPath = `/u/${encodeURIComponent(created.channel.access_slug)}/v1/chat/completions`;
   assert.equal(chatPath, streamChatPath);
   const normalStreamCompletion = await userRequest(streamChatPath, {
     method: "POST",
@@ -588,6 +592,14 @@ test("gateway isolates upstream credentials and separates administrator and user
     })
   });
   assert.equal(normalStreamCompletion.status, 200);
+  assert.equal((await userRequest(legacyStreamChatPath, {
+    method: "POST",
+    headers: externalHeaders,
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6-thinking-ag",
+      messages: [{ role: "user", content: "legacy path" }]
+    })
+  })).status, 200);
   const normalStreamSse = await normalStreamCompletion.text();
   const normalChunk = normalStreamSse
     .split(/\r?\n/)
