@@ -180,13 +180,15 @@ function reserveBodyRead(channel = {}) {
 function configuredSurface(req) {
   const adminHost = baseHost(ADMIN_BASE_URL);
   const userHost = baseHost(USER_BASE_URL);
-  // A single legacy/public origin remains supported for local development and
-  // existing deployments. Production isolation is enabled only with distinct
-  // administrator and user origins configured.
-  if (!adminHost || !userHost || adminHost === userHost) return "shared";
   const host = requestHost(req);
+
+  if (userHost && host === userHost && userHost !== adminHost) return "user";
   if (host === adminHost) return "admin";
-  if (host === userHost) return "user";
+  // A single legacy/public origin remains supported for local development and
+  // existing deployments. If only a user/API origin is configured, that origin
+  // is still isolated above while the original Render host can remain the
+  // administrator surface.
+  if (!adminHost || !userHost || adminHost === userHost) return "shared";
   return "unknown";
 }
 

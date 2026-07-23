@@ -840,3 +840,66 @@ test("gateway exposes configured model aliases and rewrites chat requests upstre
     .at(-1);
   assert.equal(upstreamAnthropic.model, "claude-sonnet-4-6-thinking-ag");
 });
+
+test("gateway isolates a user-only custom host from the administrator surface", async t => {
+  const expectedUpstreamKey = "bridge-admin-secret";
+  const upstream = createServer(async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${expectedUpstreamKey}`) return json(res, 401, { error: "bad upstream auth" });
+    if (req.url === "/api/accounts") {
+      return json(res, 200, {
+        antigravity: [{ name: "private-account", window_id: "w1", has_oauth_credentials: true, has_login_credentials: true }]
+      });
+    }
+    if (req.url === "/v1/models" || req.url === "/windows/w1/v1/models") {
+      return json(res, 200, { object: "list", data: [{ id: "gemini-3-5-flash-medium-ag" }] });
+    }
+    return json(res, 404, { error: "unexpected" });
+  });
+  const upstreamPort = await listen(upstream);
+  const gatewayPort = await freePort();
+  const dataDir = mkdtempSync(join(tmpdir(), "ag-gateway-user-host-"));
+  const gateway = spawn(process.execPath, ["server.mjs"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      PORT: String(gatewayPort),
+      GATEWAY_ADMIN_KEY: "gateway-admin-key",
+      GATEWAY_DATA_DIR: dataDir,
+      GATEWAY_USER_BASE_URL: "https://friends.gateway.test",
+      UPSTREAM_BRIDGE_URL: `http://127.0.0.1:${upstreamPort}`,
+      UPSTREAM_BRIDGE_API_KEY: expectedUpstreamKey
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(async () => {
+    if (gateway.exitCode === null) gateway.kill();
+    await close(upstream);
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const origin = `http://127.0.0.1:${gatewayPort}`;
+  await waitForHealth(origin, gateway);
+  const adminHeaders = { host: "original-render-host.gateway.test", authorization: "Bearer gateway-admin-key", "content-type": "application/json" };
+  const userHostHeaders = { host: "friends.gateway.test" };
+  const createdResponse = await rawHttpRequest(origin, "/api/admin/channels", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      label: "friend",
+      target_window_id: "w1",
+      allowed_models: ["gemini-3-5-flash-medium-ag"]
+    })
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = await createdResponse.json();
+  assert.equal(created.channel.endpoint, `https://friends.gateway.test/${created.channel.vanity_slug}/v1`);
+  assert.equal(created.channel.friend_portal_url, `https://friends.gateway.test/${created.channel.vanity_slug}/`);
+  assert.equal(created.channel.endpoint.includes("original-render-host.gateway.test"), false);
+
+  assert.equal((await rawHttpRequest(origin, "/", { headers: userHostHeaders })).status, 404);
+  assert.equal((await rawHttpRequest(origin, "/api/admin/overview", { headers: { ...userHostHeaders, authorization: "Bearer gateway-admin-key" } })).status, 404);
+  assert.equal((await rawHttpRequest(origin, `/${created.channel.vanity_slug}/`, { headers: userHostHeaders })).status, 200);
+  assert.equal((await rawHttpRequest(origin, `/${created.channel.vanity_slug}/v1/models`, {
+    headers: { ...userHostHeaders, authorization: `Bearer ${created.api_key}` }
+  })).status, 200);
+});

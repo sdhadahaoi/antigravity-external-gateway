@@ -508,7 +508,7 @@
       "<div class=\"channel-identity\">" +
         "<div class=\"channel-title-row\"><h3 title=\"" + html(label) + "\">" + html(label) + "</h3>" +
           "<span class=\"badge " + (enabled ? "badge-enabled\">启用" : "badge-disabled\">已停用") + "</span></div>" +
-        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友马甲路径: <code>" + html(vanitySlug || accessSlug || publicId) + "</code></span>" +
+        "<div class=\"channel-meta\"><span>指定凭证窗口: <code>" + html(accounts.length ? accounts.join(", ") : "未指定") + "</code></span><span>朋友专属路径: <code>" + html(vanitySlug || accessSlug || publicId) + "</code></span>" +
           (expiry ? "<span>到期: " + html(formatDate(expiry)) + "</span>" : "") + "</div>" +
         "<div class=\"channel-meta\"><span title=\"" + html(models.join(", ")) + "\">模型: " + html(models.length ? models.join(", ") : "未配置（全部禁止）") + "</span></div>" +
       "</div>" +
@@ -960,17 +960,17 @@
     if (!elements.createEndpointPreview && !elements.createPortalPreview) return;
     const slug = String(elements.createForm.elements.access_slug?.value || "").trim().toLowerCase();
     if (!slug) {
-      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成随机马甲路径";
-      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成随机马甲路径";
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成专属路径";
+      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成专属路径";
       return;
     }
     if (!/^[a-z0-9][a-z0-9_-]{2,63}$/.test(slug)) {
-      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：用户地址标识格式不正确";
-      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：用户地址标识格式不正确";
+      if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：路径标识格式不正确";
+      if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：路径标识格式不正确";
       return;
     }
-    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成随机马甲路径";
-    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成随机马甲路径";
+    if (elements.createPortalPreview) elements.createPortalPreview.textContent = "朋友用户页地址：创建后自动生成专属路径";
+    if (elements.createEndpointPreview) elements.createEndpointPreview.textContent = "完整 API 地址：创建后自动生成专属路径";
   }
 
   function collectPayload(form, modelContainer) {
