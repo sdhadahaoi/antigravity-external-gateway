@@ -524,11 +524,12 @@
         "<div class=\"usage-item\"><div><span>请求用量</span><strong>" + html(limitText(usage.request, requestLimit)) + "</strong></div><div class=\"meter " + meterClass(requestPercent) + "\"><span style=\"width:" + requestPercent + "%\"></span></div></div>" +
         "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span><span>窗口人数: " + html(windowFriendLimitLabel(channelValue(channel, ["window_friend_limit"], null))) + "</span></div>" +
       "</div>" +
-      "<div class=\"channel-actions\">" +
-        "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
-        "<button class=\"button button-quiet\" type=\"button\" data-action=\"test-api\">测试 API</button>" +
-        "<button class=\"button button-quiet\" type=\"button\" data-action=\"edit\">编辑</button>" +
-        "<button class=\"button " + (enabled ? "button-warning\" data-action=\"toggle\">停用" : "button-quiet\" data-action=\"toggle\">启用") + "</button>" +
+    "<div class=\"channel-actions\">" +
+      "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
+      "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-share\">复制给朋友</button>" +
+      "<button class=\"button button-quiet\" type=\"button\" data-action=\"test-api\">测试 API</button>" +
+      "<button class=\"button button-quiet\" type=\"button\" data-action=\"edit\">编辑</button>" +
+      "<button class=\"button " + (enabled ? "button-warning\" data-action=\"toggle\">停用" : "button-quiet\" data-action=\"toggle\">启用") + "</button>" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"rotate\">轮换 Key</button>" +
         "<button class=\"button button-danger\" type=\"button\" data-action=\"delete\">删除</button>" +
       "</div></article>";
@@ -629,6 +630,22 @@
     await copyText(backupText([channel]), "已复制这个朋友的配置备份。");
     const warning = backupWarning([channel]);
     if (warning) showToast(warning, "error");
+  }
+
+  function friendShareText(channel, apiKey) {
+    const key = String(apiKey || savedApiKeyFor(channel) || "").trim();
+    if (!key) {
+      throw new Error("当前浏览器没有保存这个朋友的完整 API Key；请先轮换 Key 或导入完整备份。");
+    }
+    return [
+      "API Key：" + key,
+      "API 地址：" + endpointFor(channel || {}),
+      "朋友网页：" + friendPortalFor(channel || {}),
+    ].join("\n");
+  }
+
+  async function copyChannelShare(channel, apiKey) {
+    await copyText(friendShareText(channel, apiKey), "已复制给朋友的三项信息。");
   }
 
   async function copyAllFriendBackups() {
@@ -1497,6 +1514,15 @@
       }
       copyChannelBackup(state.modalChannel);
     });
+    $("#copyModalFriendShare").addEventListener("click", () => {
+      if (!state.modalChannel) {
+        showToast("没有可复制的朋友信息。", "error");
+        return;
+      }
+      copyChannelShare(state.modalChannel, elements.rawApiKey.textContent).catch((error) => {
+        showToast(asErrorMessage(error, "没有可复制的朋友信息。"), "error");
+      });
+    });
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.dataset.copyValue || elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
     $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.dataset.copyValue || elements.modalPortalEndpoint.textContent, "已复制朋友用户页地址。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
@@ -1515,6 +1541,11 @@
       if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制朋友用户页地址。");
       if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
       if (action.dataset.action === "copy-config") copyChannelBackup(channel);
+      if (action.dataset.action === "copy-share") {
+        copyChannelShare(channel).catch((error) => {
+          showToast(asErrorMessage(error, "没有可复制的朋友信息。"), "error");
+        });
+      }
       if (action.dataset.action === "test-api") testChannelApi(channel);
       if (action.dataset.action === "forget-saved-key") {
         forgetApiKey(channel);
