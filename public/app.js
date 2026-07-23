@@ -51,7 +51,6 @@
     rawApiKey: $("#rawApiKey"),
     modalEndpoint: $("#modalEndpoint"),
     modalPortalEndpoint: $("#modalPortalEndpoint"),
-    modalLoginEndpoint: $("#modalLoginEndpoint"),
     editModal: $("#editModal"),
     editForm: $("#editChannelForm"),
     editAccount: $("#editAccount"),
@@ -309,33 +308,6 @@
     return "";
   }
 
-  function appendAccessKeyToUrl(baseUrl, key) {
-    const cleanKey = String(key || "").trim();
-    if (!baseUrl || !cleanKey) return baseUrl || "";
-    try {
-      const url = new URL(baseUrl, window.location.origin);
-      url.searchParams.set("access_key", cleanKey);
-      return url.toString();
-    } catch (_) {
-      const separator = String(baseUrl).includes("?") ? "&" : "?";
-      return String(baseUrl) + separator + "access_key=" + encodeURIComponent(cleanKey);
-    }
-  }
-
-  function maskedAccessLoginUrl(baseUrl, key) {
-    const cleanKey = String(key || "").trim();
-    if (!baseUrl || !cleanKey) return baseUrl || "";
-    const masked = cleanKey.length > 10 ? cleanKey.slice(0, 6) + "..." + cleanKey.slice(-6) : "已隐藏";
-    try {
-      const url = new URL(baseUrl, window.location.origin);
-      url.searchParams.set("access_key", masked);
-      return url.toString();
-    } catch (_) {
-      const separator = String(baseUrl).includes("?") ? "&" : "?";
-      return String(baseUrl) + separator + "access_key=" + encodeURIComponent(masked);
-    }
-  }
-
   function normalizeBaseUrl(url) {
     const candidate = String(url || window.location.origin).trim().replace(/\/+$/, "");
     return candidate || window.location.origin;
@@ -478,8 +450,6 @@
     const endpoint = endpointFor(channel);
     const friendPortal = friendPortalFor(channel);
     const savedKey = savedApiKeyFor(channel);
-    const savedLogin = savedKey && friendPortal ? appendAccessKeyToUrl(friendPortal, savedKey) : "";
-    const savedLoginDisplay = savedKey && friendPortal ? maskedAccessLoginUrl(friendPortal, savedKey) : "";
     const expiry = channelValue(channel, ["expires_at", "expiresAt"], "");
     const disabledClass = enabled ? "" : " disabled";
 
@@ -495,7 +465,6 @@
         (savedKey ? "<button class=\"icon-button\" type=\"button\" data-action=\"copy-saved-key\">复制完整 Key</button><button class=\"icon-button\" type=\"button\" data-action=\"forget-saved-key\">忘记</button>" : "") + "</div>" +
         (friendPortal ? "<div class=\"channel-endpoint friend-portal\"><span>朋友用户页（统计/额度/日志都在这里）</span><code title=\"" + html(friendPortal) + "\">" + html(friendPortal) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-portal\" data-endpoint=\"" + html(friendPortal) + "\">复制</button></div>" : "") +
         "<div class=\"channel-endpoint\"><span>朋友 API Base URL</span><code title=\"" + html(endpoint) + "\">" + html(endpoint) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
-        (savedLogin ? "<div class=\"channel-endpoint login-portal\"><span>一键登录朋友页（不是第二个网页）</span><code title=\"真实链接已隐藏，点击复制会复制完整链接\">" + html(savedLoginDisplay) + "</code><button class=\"icon-button\" type=\"button\" data-action=\"copy-login\">复制</button></div>" : "") +
       "</div>" +
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
@@ -1009,20 +978,7 @@
     elements.rawApiKey.textContent = apiKey || "未返回 API Key";
     elements.modalEndpoint.textContent = endpointFor(channel || {});
     elements.modalPortalEndpoint.textContent = friendPortalFor(channel || {});
-    if (elements.modalLoginEndpoint) elements.modalLoginEndpoint.textContent = appendAccessKeyToUrl(friendPortalFor(channel || {}), apiKey);
     openModal(elements.keyModal);
-  }
-
-  function friendShareText(channel, apiKey) {
-    const portal = friendPortalFor(channel || {});
-    const endpoint = endpointFor(channel || {});
-    const login = appendAccessKeyToUrl(portal, apiKey);
-    return [
-      "朋友用户页: " + portal,
-      "朋友 API 地址: " + endpoint,
-      "朋友 API Key: " + String(apiKey || "").trim(),
-      "一键登录链接: " + login
-    ].join("\n");
   }
 
   async function copyText(value, successMessage) {
@@ -1427,14 +1383,6 @@
       elements.estimateCharacters.textContent = elements.estimateText.value.length + " 个字符";
     });
     $("#copyRawApiKey").addEventListener("click", () => copyText(elements.rawApiKey.textContent, "已复制 API Key。"));
-    const copyFriendOneClick = $("#copyFriendOneClick");
-    if (copyFriendOneClick) copyFriendOneClick.addEventListener("click", () => {
-      if (!state.modalChannel || !elements.rawApiKey.textContent) {
-        showToast("没有可复制的朋友信息。", "error");
-        return;
-      }
-      copyText(friendShareText(state.modalChannel, elements.rawApiKey.textContent), "已复制朋友一键分享内容。");
-    });
     $("#copyModalFriendBackup").addEventListener("click", () => {
       if (!state.modalChannel) {
         showToast("没有可复制的朋友配置。", "error");
@@ -1444,8 +1392,6 @@
     });
     $("#copyModalEndpoint").addEventListener("click", () => copyText(elements.modalEndpoint.textContent, "已复制外接 API 地址。"));
     $("#copyModalPortalEndpoint").addEventListener("click", () => copyText(elements.modalPortalEndpoint.textContent, "已复制朋友用户页地址。"));
-    const copyModalLoginEndpoint = $("#copyModalLoginEndpoint");
-    if (copyModalLoginEndpoint) copyModalLoginEndpoint.addEventListener("click", () => copyText(elements.modalLoginEndpoint.textContent, "已复制一键登录朋友页。"));
     $("#closeKeyModal").addEventListener("click", () => closeModal(elements.keyModal));
 
     document.addEventListener("click", (event) => {
@@ -1461,7 +1407,6 @@
       if (action.dataset.action === "copy-endpoint") copyText(action.dataset.endpoint, "已复制外接 API 地址。");
       if (action.dataset.action === "copy-portal") copyText(action.dataset.endpoint, "已复制朋友用户页地址。");
       if (action.dataset.action === "copy-saved-key") copyText(savedApiKeyFor(channel), "已复制完整 API Key。");
-      if (action.dataset.action === "copy-login") copyText(appendAccessKeyToUrl(friendPortalFor(channel), savedApiKeyFor(channel)), "已复制一键登录朋友页。");
       if (action.dataset.action === "copy-config") copyChannelBackup(channel);
       if (action.dataset.action === "test-api") testChannelApi(channel);
       if (action.dataset.action === "forget-saved-key") {

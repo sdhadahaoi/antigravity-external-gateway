@@ -368,7 +368,9 @@ test("gateway isolates upstream credentials and separates administrator and user
   const userScript = await (await userRequest("/assets/user.js")).text();
   const userCss = await (await userRequest("/assets/user.css")).text();
   assert.equal(adminScript.includes("admin_key"), true);
-  assert.equal(adminScript.includes("modalLoginEndpoint"), true);
+  assert.equal(adminScript.includes("modalLoginEndpoint"), false);
+  assert.equal(adminScript.includes("access_key"), false);
+  assert.equal(userScript.includes("access_key"), false);
   assert.equal(adminScript.includes("randomizeCreateForm"), true);
   assert.equal(adminScript.includes("ag_external_gateway_saved_friend_keys"), true);
   assert.equal(adminScript.includes("copy-saved-key"), true);
@@ -378,8 +380,8 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(adminScript.includes("importFriendBackupText"), true);
   assert.equal(adminHome.includes("复制全部配置"), true);
   assert.equal(adminHome.includes("导入恢复"), true);
-  assert.equal(userScript.includes("api_key"), true);
-  assert.equal(userScript.includes("clearSensitiveQuery"), true);
+  assert.equal(userScript.includes("api_key"), false);
+  assert.equal(userScript.includes("clearSensitiveQuery"), false);
   assert.equal(userCss.includes("[hidden]"), true);
   assert.equal((await userRequest("/assets/user.js")).status, 200);
   assert.equal((await userRequest("/assets/user.css")).status, 200);

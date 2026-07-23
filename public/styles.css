@@ -419,7 +419,6 @@ textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
 .channel-endpoint span { flex: 0 0 auto; color: var(--subtle); font-size: 10px; }
 .channel-endpoint code { overflow: hidden; color: #83d9cc; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .friend-portal code { color: #e5c984; }
-.login-portal code { color: #b6efe7; }
 
 .usage-stack { display: grid; gap: 8px; }
 .usage-item { display: grid; gap: 4px; }

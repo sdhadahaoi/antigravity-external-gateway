@@ -301,11 +301,10 @@
         <button class="modal-close" type="button" data-close-modal="keyModal" aria-label="关闭">关闭</button>
         <p class="eyebrow">ONE-TIME SECRET</p>
         <h2 id="keyModalTitle">请立即保存外接 API Key</h2>
-        <p class="modal-copy">该密钥不会再次从服务端完整显示；本管理网页会把它保存在当前浏览器，方便以后继续复制朋友用户页登录链接和完整 Key。换电脑或清理浏览器数据后请以这里复制保存的为准。</p>
+        <p class="modal-copy">该密钥不会再次从服务端完整显示；本管理网页会把它保存在当前浏览器，方便以后继续复制完整 Key。换电脑或清理浏览器数据后请以这里复制保存的为准。</p>
         <div class="secret-value"><code id="rawApiKey"></code></div>
         <div class="modal-actions">
           <button class="button button-primary" id="copyRawApiKey" type="button">复制 API Key</button>
-          <button class="button button-quiet" id="copyFriendOneClick" type="button">一键复制给朋友</button>
           <button class="button button-quiet" id="copyModalFriendBackup" type="button">复制此朋友完整配置</button>
           <button class="button button-quiet" id="closeKeyModal" type="button">我已保存</button>
         </div>
@@ -313,11 +312,6 @@
           <span>朋友用户页地址</span>
           <code id="modalPortalEndpoint"></code>
           <button class="button button-quiet" id="copyModalPortalEndpoint" type="button">复制地址</button>
-        </div>
-        <div class="modal-endpoint">
-          <span>一键登录朋友页（同一个用户页）</span>
-          <code id="modalLoginEndpoint"></code>
-          <button class="button button-quiet" id="copyModalLoginEndpoint" type="button">复制登录链接</button>
         </div>
         <div class="modal-endpoint">
           <span>外接 API 地址</span>

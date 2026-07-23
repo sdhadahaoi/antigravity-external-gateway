@@ -2,10 +2,9 @@ name: Render keepalive
 
 on:
   schedule:
-    # GitHub Actions cron is UTC. These are 07:01 and 07:50 through
-    # 23:01 and 23:50 in China Standard Time (UTC+8), every day.
-    - cron: "1 0-15,23 * * *"
-    - cron: "50 0-15,23 * * *"
+    # Keep the Free Render instance receiving traffic all day. GitHub Actions
+    # cron runs in UTC, but this schedule is timezone-independent.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
