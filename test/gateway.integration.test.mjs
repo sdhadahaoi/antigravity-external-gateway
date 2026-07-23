@@ -329,6 +329,7 @@ test("gateway isolates upstream credentials and separates administrator and user
 
   const overview = await (await adminRequest("/api/admin/overview", { headers: adminHeaders })).json();
   assert.equal(overview.ok, true);
+  assert.deepEqual(overview.config.warnings, []);
   assert.equal(JSON.stringify(overview).includes(`127.0.0.1:${upstreamPort}`), false);
   assert.equal(JSON.stringify(overview).includes(expectedUpstreamKey), false);
 
@@ -979,4 +980,43 @@ test("gateway keeps a single public Render host shared when user base url matche
   assert.equal((await rawHttpRequest(origin, "/u1/v1/models", {
     headers: { ...sharedHostHeaders, authorization: `Bearer ${created.api_key}` }
   })).status, 200);
+});
+
+test("gateway warns when administrator and upstream keys are identical", async t => {
+  const sharedKey = "same-secret-key";
+  const upstream = createServer(async (req, res) => {
+    if (req.headers.authorization !== `Bearer ${sharedKey}`) return json(res, 401, { error: "bad upstream auth" });
+    if (req.url === "/api/accounts") return json(res, 200, { antigravity: [] });
+    if (req.url === "/v1/models") return json(res, 200, { object: "list", data: [] });
+    return json(res, 404, { error: "unexpected" });
+  });
+  const upstreamPort = await listen(upstream);
+  const gatewayPort = await freePort();
+  const dataDir = mkdtempSync(join(tmpdir(), "ag-gateway-key-warning-"));
+  const gateway = spawn(process.execPath, ["server.mjs"], {
+    cwd: projectRoot,
+    env: {
+      ...process.env,
+      PORT: String(gatewayPort),
+      GATEWAY_ADMIN_KEY: sharedKey,
+      GATEWAY_DATA_DIR: dataDir,
+      UPSTREAM_BRIDGE_URL: `http://127.0.0.1:${upstreamPort}`,
+      UPSTREAM_BRIDGE_API_KEY: sharedKey
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(async () => {
+    if (gateway.exitCode === null) gateway.kill();
+    await close(upstream);
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const origin = `http://127.0.0.1:${gatewayPort}`;
+  await waitForHealth(origin, gateway);
+  const overview = await (await rawHttpRequest(origin, "/api/admin/overview", {
+    headers: { authorization: `Bearer ${sharedKey}` }
+  })).json();
+  assert.equal(overview.ok, true);
+  assert.equal(overview.config.warnings.length, 1);
+  assert.equal(overview.config.warnings[0].code, "admin_key_matches_upstream_key");
 });
