@@ -434,6 +434,11 @@
     return hasLimit(value) ? String(value) : "不限制";
   }
 
+  function windowFriendLimitLabel(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0 ? String(Math.trunc(numeric)) : "不限制";
+  }
+
   function renderChannelCard(channel) {
     const id = pick(channel, ["id", "public_id", "channel_id"], "");
     const publicId = pick(channel, ["public_id", "id", "channel_id"], id);
@@ -469,7 +474,7 @@
       "<div class=\"usage-stack\">" +
         "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
         "<div class=\"usage-item\"><div><span>请求用量</span><strong>" + html(limitText(usage.request, requestLimit)) + "</strong></div><div class=\"meter " + meterClass(requestPercent) + "\"><span style=\"width:" + requestPercent + "%\"></span></div></div>" +
-        "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span><span>窗口人数: " + html(policyLimitLabel(channelValue(channel, ["window_friend_limit"], null))) + "</span></div>" +
+        "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span><span>窗口人数: " + html(windowFriendLimitLabel(channelValue(channel, ["window_friend_limit"], null))) + "</span></div>" +
       "</div>" +
       "<div class=\"channel-actions\">" +
         "<button class=\"button button-quiet\" type=\"button\" data-action=\"copy-config\">复制配置</button>" +
@@ -886,7 +891,7 @@
     setValue("token_limit_per_minute", "20");
     setValue("rate_limit_per_minute", "10");
     setValue("concurrency_limit", "1");
-    setValue("window_friend_limit", "1");
+    setValue("window_friend_limit", "");
     setValue("starts_at", localDatetimeAfter(0));
     setValue("expires_at", localDatetimeAfter(randomChoice([1, 3, 7, 14, 30])));
     form.elements.enabled.checked = true;
