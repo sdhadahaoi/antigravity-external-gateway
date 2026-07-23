@@ -85,6 +85,7 @@ function json(res, status, value) {
 
 test("gateway isolates upstream credentials and separates administrator and user hosts", async t => {
   const expectedUpstreamKey = "bridge-admin-secret";
+  const seededApiKey = `agk_${"S".repeat(40)}`;
   let expectedUpstreamUrl = "";
   const seen = [];
   const upstream = createServer(async (req, res) => {
@@ -277,7 +278,19 @@ test("gateway isolates upstream credentials and separates administrator and user
       UPSTREAM_BRIDGE_URL: expectedUpstreamUrl,
       UPSTREAM_BRIDGE_API_KEY: expectedUpstreamKey,
       GATEWAY_ADMIN_BASE_URL: "https://admin.gateway.test",
-      GATEWAY_USER_BASE_URL: "https://access.gateway.test"
+      GATEWAY_USER_BASE_URL: "https://access.gateway.test",
+      GATEWAY_FRIENDS_JSON: JSON.stringify({
+        friends: [{
+          label: "seed friend",
+          access_slug: "seed-friend",
+          api_key: seededApiKey,
+          target_window_id: "w1",
+          target_window_ids: ["w1"],
+          allowed_models: ["gemini-3-5-flash-medium-ag"],
+          rate_limit_per_minute: 5,
+          max_output_tokens: 64
+        }]
+      })
     },
     stdio: ["ignore", "pipe", "pipe"]
   });
@@ -318,6 +331,12 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(overview.ok, true);
   assert.equal(JSON.stringify(overview).includes(`127.0.0.1:${upstreamPort}`), false);
   assert.equal(JSON.stringify(overview).includes(expectedUpstreamKey), false);
+
+  const seededModels = await userRequest("/u/seed-friend/v1/models", {
+    headers: { authorization: `Bearer ${seededApiKey}` }
+  });
+  assert.equal(seededModels.status, 200);
+  assert.deepEqual((await seededModels.json()).data.map(item => item.id), ["gemini-3-5-flash-medium-ag"]);
 
   const noAllowedModels = await adminRequest("/api/admin/channels", {
     method: "POST",

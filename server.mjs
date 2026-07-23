@@ -20,6 +20,7 @@ const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.GATEWAY_UPSTREAM_T
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const MODEL_ALIASES = parseModelAliases(process.env.GATEWAY_MODEL_ALIASES || "");
 const store = new ChannelStore(STORE_FILE);
+seedConfiguredFriends();
 const pendingBodyReads = new Map();
 const pendingWindowRequests = new Map();
 
@@ -48,6 +49,50 @@ function bearerToken(req) {
 
 function adminAuthorized(req) {
   return Boolean(ADMIN_KEY && safeEqual(bearerToken(req), ADMIN_KEY));
+}
+
+function seedConfiguredFriends() {
+  const raw = String(process.env.GATEWAY_FRIENDS_JSON || "").trim();
+  if (!raw) {
+    return;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    console.warn(`GATEWAY_FRIENDS_JSON ignored: ${error.message}`);
+    return;
+  }
+
+  const friends = configuredFriendEntries(parsed);
+  if (!friends.length) {
+    console.warn("GATEWAY_FRIENDS_JSON ignored: no friends entries found.");
+    return;
+  }
+
+  const seeded = store.seed(friends);
+  if (seeded.created || seeded.updated || seeded.skipped) {
+    console.log(`Seeded friend channels from GATEWAY_FRIENDS_JSON: created=${seeded.created} updated=${seeded.updated} skipped=${seeded.skipped}`);
+  }
+  for (const error of seeded.errors.slice(0, 10)) {
+    console.warn(`GATEWAY_FRIENDS_JSON friend #${error.index} ignored: ${error.message}`);
+  }
+  if (seeded.errors.length > 10) {
+    console.warn(`GATEWAY_FRIENDS_JSON ignored ${seeded.errors.length - 10} additional invalid friend entries.`);
+  }
+}
+
+function configuredFriendEntries(value) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value && typeof value === "object") {
+    if (Array.isArray(value.friends)) return value.friends;
+    if (Array.isArray(value.channels)) return value.channels;
+    if (value.access_slug || value.api_key || value.apiKey) return [value];
+  }
+  return [];
 }
 
 function parseModelAliases(value) {

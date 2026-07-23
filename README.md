@@ -95,6 +95,7 @@ https://api.example.com/u/<朋友专属短地址>/v1
 | `UPSTREAM_BRIDGE_URL` | 原 `zeabur-antigravity-bridge` 的完整基础 URL | Render Secret，例：`https://...onrender.com` |
 | `UPSTREAM_BRIDGE_API_KEY` | 原 bridge 所需的 API Key | Render Secret，绝不提交 |
 | `GATEWAY_DATA_DIR` | 网关状态、配额和日志数据目录 | Render Free 中设为 `/tmp/gateway-data`；会随重启丢失，需用网页备份恢复 |
+| `GATEWAY_FRIENDS_JSON` | 可选朋友通道种子 JSON | Render Secret；可粘贴管理台导出的完整朋友备份，服务启动时自动恢复朋友 URL 和 API Key |
 | `GATEWAY_ADMIN_BASE_URL` | 管理员界面的公开基础 URL | 生产环境填写 `https://admin.example.com` |
 | `GATEWAY_USER_BASE_URL` | 用户门户和外接 API 的公开基础 URL | 生产环境填写 `https://api.example.com`；新建通道的门户/API 地址由此生成 |
 | `GATEWAY_PUBLIC_BASE_URL` | 旧版单一公开基础 URL 的兼容回退 | 新部署不建议设置；仅在尚未拆分域名的旧部署中使用 |
@@ -126,6 +127,8 @@ URL 选择顺序如下：`GATEWAY_ADMIN_BASE_URL` 和 `GATEWAY_USER_BASE_URL` �
 ### Render Free 数据保存方式
 
 当前 `render.yaml` 默认使用 Render Free，不挂载 Persistent Disk，并将 `GATEWAY_DATA_DIR` 指向 `/tmp/gateway-data`。API 在服务运行期间可以正常使用；但 Render Free 重启、休眠唤醒或重新部署后，本地朋友配置、Key hash、统计和日志可能丢失。
+
+如果设置了 `GATEWAY_FRIENDS_JSON`，服务启动时会把里面的朋友通道自动种回当前存储。这个变量可以直接使用管理台“复制全部配置”或“下载备份”得到的 JSON；它必须包含每个朋友的 `access_slug`、`api_key`、`target_window_ids` 和 `allowed_models`。同一个 `access_slug` 已存在时，启动种子会更新策略和 API Key，但保留现有用量、日志和运行期统计。
 
 为了不影响朋友继续使用，同一个朋友的用户地址和 API Key 必须提前导出备份。推荐习惯：
 

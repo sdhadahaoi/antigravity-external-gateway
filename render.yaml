@@ -21,6 +21,10 @@ services:
       # buttons to preserve friend URLs and API keys across restarts.
       - key: GATEWAY_DATA_DIR
         value: /tmp/gateway-data
+      # Optional seed JSON for restoring friend channels after Free instance restarts.
+      # Paste the dashboard's friend backup JSON here when you need automatic recovery.
+      - key: GATEWAY_FRIENDS_JSON
+        sync: false
       # Public address for the administrator-only surface, e.g. https://admin.example.com.
       - key: GATEWAY_ADMIN_BASE_URL
         sync: false
