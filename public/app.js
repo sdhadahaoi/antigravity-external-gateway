@@ -430,7 +430,7 @@
 
   function channelUsage(channel) {
     const usage = pick(channel, ["usage", "stats"], {}) || {};
-    const token = pick(usage, ["total_tokens", "tokens_used", "token_count", "tokens"], channelValue(channel, ["used_tokens", "token_used"], 0));
+    const token = pick(usage, ["total_chars", "total_tokens", "tokens_used", "token_count", "tokens"], channelValue(channel, ["used_tokens", "token_used"], 0));
     const request = pick(usage, ["total_requests", "requests", "request_count", "requests_used"], channelValue(channel, ["used_requests", "request_used"], 0));
     return { token: numberValue(token), request: numberValue(request) };
   }
@@ -502,7 +502,7 @@
         "<div class=\"channel-endpoint\"><span>朋友 API Base URL</span><div class=\"endpoint-address\"><code title=\"" + html(endpoint) + "\">" + html(endpointDisplayValue.primary) + "</code>" + (endpointDisplayValue.secondary ? "<small>" + html(endpointDisplayValue.secondary) + "</small>" : "") + "</div><button class=\"icon-button\" type=\"button\" data-action=\"copy-endpoint\" data-endpoint=\"" + html(endpoint) + "\">复制</button></div>" +
       "</div>" +
       "<div class=\"usage-stack\">" +
-        "<div class=\"usage-item\"><div><span>Token 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
+        "<div class=\"usage-item\"><div><span>Token(字符) 用量</span><strong>" + html(limitText(usage.token, tokenLimit)) + "</strong></div><div class=\"meter " + meterClass(tokenPercent) + "\"><span style=\"width:" + tokenPercent + "%\"></span></div></div>" +
         "<div class=\"usage-item\"><div><span>请求用量</span><strong>" + html(limitText(usage.request, requestLimit)) + "</strong></div><div class=\"meter " + meterClass(requestPercent) + "\"><span style=\"width:" + requestPercent + "%\"></span></div></div>" +
         "<div class=\"channel-meta\"><span>频率: " + html(policyLimitLabel(channelValue(channel, ["rate_limit_per_minute", "rpm_limit"], null))) + "/分钟</span><span>并发: " + html(policyLimitLabel(channelValue(channel, ["concurrency_limit"], null))) + "</span><span>窗口人数: " + html(windowFriendLimitLabel(channelValue(channel, ["window_friend_limit"], null))) + "</span></div>" +
       "</div>" +
@@ -1253,7 +1253,7 @@
       const logs = Array.isArray(result) ? result : (Array.isArray(result.logs) ? result.logs : []);
       renderLogs(logs);
     } catch (error) {
-      elements.logsBody.innerHTML = "<tr><td colspan=\"6\" class=\"table-empty\">" + html(asErrorMessage(error, "日志加载失败。")) + "</td></tr>";
+      elements.logsBody.innerHTML = "<tr><td colspan=\"8\" class=\"table-empty\">" + html(asErrorMessage(error, "日志加载失败。")) + "</td></tr>";
     } finally {
       $("#refreshLogs").disabled = false;
     }
@@ -1261,7 +1261,7 @@
 
   function renderLogs(logs) {
     if (!logs.length) {
-      elements.logsBody.innerHTML = "<tr><td colspan=\"6\" class=\"table-empty\">暂无匹配的使用日志。</td></tr>";
+      elements.logsBody.innerHTML = "<tr><td colspan=\"8\" class=\"table-empty\">暂无匹配的使用日志。</td></tr>";
       return;
     }
     elements.logsBody.innerHTML = logs.map((log) => {
@@ -1269,7 +1269,9 @@
       const channel = pick(log, ["channel_label", "channel_id", "channel", "public_id"], "-");
       const model = pick(log, ["model", "model_id"], "-");
       const event = pick(log, ["event", "request_id", "id", "path", "operation"], "-");
-      const tokens = pick(log, ["total_tokens", "estimated_tokens", "tokens", "token_count"], 0);
+      const inputChars = pick(log, ["prompt_chars", "input_chars", "input_tokens"], 0);
+      const outputChars = pick(log, ["output_chars", "output_tokens"], 0);
+      const tokens = pick(log, ["total_chars", "total_tokens", "estimated_tokens", "tokens", "token_count"], numberValue(inputChars) + numberValue(outputChars));
       const status = pick(log, ["status", "status_code"], "");
       const failed = log.success === false || event === "rejected" || Number(status) >= 400;
       const successful = log.success === true || event === "settled" || (Number(status) >= 200 && Number(status) < 400);
@@ -1280,7 +1282,7 @@
             : event === "key_rotated" ? "密钥已轮换"
               : event === "revoked" ? "已停用"
                 : String(status || "-");
-      return "<tr><td>" + html(formatDate(timestamp)) + "</td><td>" + html(channel) + "</td><td>" + html(model) + "</td><td title=\"" + html(event) + "\">" + html(String(event).slice(0, 20)) + "</td><td>" + html(formatScaledNumber(tokens)) + "</td><td class=\"" + (failed ? "result-error" : successful ? "result-ok" : "") + "\">" + html(resultText) + "</td></tr>";
+      return "<tr><td>" + html(formatDate(timestamp)) + "</td><td>" + html(channel) + "</td><td>" + html(model) + "</td><td title=\"" + html(event) + "\">" + html(String(event).slice(0, 20)) + "</td><td>" + html(formatScaledNumber(inputChars)) + "</td><td>" + html(formatScaledNumber(outputChars)) + "</td><td>" + html(formatScaledNumber(tokens)) + "</td><td class=\"" + (failed ? "result-error" : successful ? "result-ok" : "") + "\">" + html(resultText) + "</td></tr>";
     }).join("");
   }
 
@@ -1299,11 +1301,11 @@
     try {
       const result = await api("/api/admin/token-estimate", { method: "POST", body: JSON.stringify({ text }) });
       const estimate = pick(result, ["estimate", "estimate_tokens", "estimated_tokens", "tokens", "token_count"], pick(result.data, ["estimate", "estimate_tokens", "estimated_tokens", "tokens"], 0));
-      const method = pick(result, ["method", "provider", "note"], "仅作发送前预估");
-      elements.estimateResult.textContent = "预计 " + formatScaledNumber(estimate) + " Token。" + (method ? " " + method : "");
+      const method = pick(result, ["method", "provider", "note"], "按桥项目口径统计字符");
+      elements.estimateResult.textContent = "输入 " + formatScaledNumber(estimate) + " 字符；Token(字符) " + formatScaledNumber(estimate) + "。" + (method ? " " + method : "");
     } catch (error) {
       elements.estimateResult.className = "estimate-result error";
-      elements.estimateResult.textContent = asErrorMessage(error, "Token 预估失败。");
+      elements.estimateResult.textContent = asErrorMessage(error, "字符统计失败。");
     } finally {
       button.disabled = false;
       button.textContent = "计算";
@@ -1364,7 +1366,7 @@
     ) : "";
 
     const familyHtml = families.length ? (
-      "<h3>全部模型池 Token 预估</h3><div class=\"quota-family-grid\">" +
+      "<h3>全部模型池 Token(字符) 预估</h3><div class=\"quota-family-grid\">" +
       families.map((family) => "<article class=\"quota-mini-card\">" +
         "<h3>" + html(family.label || family.id || "模型池") + "</h3>" +
         "<p>有效剩余: <strong>" + html(tokenText(family.effective && family.effective.remaining_tokens)) + "</strong></p>" +
@@ -1423,9 +1425,9 @@
       state.channels = [];
       state.accounts = [];
       state.models = [];
-      if (elements.adminQuotaResult) elements.adminQuotaResult.textContent = "连接管理端后查看全部模型额度与 Token 预估。";
+      if (elements.adminQuotaResult) elements.adminQuotaResult.textContent = "连接管理端后查看全部模型额度与 Token(字符) 预估。";
       elements.channelsList.innerHTML = "<div class=\"empty-state\">输入管理密钥后可查看并管理多个朋友的信息、地址和 API Key。</div>";
-      elements.logsBody.innerHTML = "<tr><td colspan=\"6\" class=\"table-empty\">连接管理端后加载日志。</td></tr>";
+      elements.logsBody.innerHTML = "<tr><td colspan=\"8\" class=\"table-empty\">连接管理端后加载日志。</td></tr>";
       setMessage(elements.adminMessage, "已清除当前会话中的管理密钥。", "");
     });
     elements.adminKey.addEventListener("keydown", (event) => {

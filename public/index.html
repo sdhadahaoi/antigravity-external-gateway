@@ -255,12 +255,14 @@
                   <th>通道</th>
                   <th>模型</th>
                   <th>请求</th>
-                  <th>Token</th>
+                  <th>输入字符</th>
+                  <th>输出字符</th>
+                  <th>Token<br><small>（字符）</small></th>
                   <th>结果</th>
                 </tr>
               </thead>
               <tbody id="logsBody">
-                <tr><td colspan="6" class="table-empty">连接管理端后加载日志。</td></tr>
+                <tr><td colspan="8" class="table-empty">连接管理端后加载日志。</td></tr>
               </tbody>
             </table>
           </div>
@@ -270,11 +272,11 @@
           <div class="section-heading">
             <div>
               <p class="eyebrow">PRE-FLIGHT</p>
-              <h2 id="estimateTitle">Token 预估</h2>
+              <h2 id="estimateTitle">字符统计</h2>
             </div>
           </div>
           <label for="estimateText" class="sr-only">待估算文本</label>
-          <textarea id="estimateText" rows="7" maxlength="50000" placeholder="粘贴提示词或待发送文本，估算其 Token 数量"></textarea>
+          <textarea id="estimateText" rows="7" maxlength="50000" placeholder="粘贴提示词或待发送文本，按桥项目口径统计字符"></textarea>
           <div class="estimate-actions">
             <span id="estimateCharacters" class="muted">0 个字符</span>
             <button class="button button-primary" id="estimateButton" type="button">计算</button>
@@ -299,7 +301,7 @@
               <button class="button button-quiet" id="refreshAdminQuota" type="button">刷新额度</button>
             </div>
           </div>
-          <div class="quota-result" id="adminQuotaResult">连接管理端后查看全部模型额度与 Token 预估。</div>
+          <div class="quota-result" id="adminQuotaResult">连接管理端后查看全部模型额度与 Token(字符) 预估。</div>
         </section>
       </div>
     </main>

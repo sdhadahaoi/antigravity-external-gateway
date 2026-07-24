@@ -1042,7 +1042,7 @@ function userLogView(entry = {}) {
     event: String(entry.event || ""),
     at: String(entry.at || "")
   };
-  for (const field of ["reason", "model", "status", "estimated_tokens", "input_tokens", "output_tokens", "total_tokens"]) {
+  for (const field of ["reason", "model", "status", "estimated_tokens", "input_tokens", "output_tokens", "total_tokens", "prompt_chars", "output_chars", "total_chars"]) {
     if (entry[field] !== undefined) view[field] = entry[field];
   }
   return view;
@@ -1401,7 +1401,15 @@ async function handleAdmin(req, res, url) {
   if (pathname === "/api/admin/token-estimate" && req.method === "POST") {
     const body = await readJsonBody(req);
     const text = String(body.text || "");
-    return sendJson(res, 200, { ok: true, estimate_tokens: estimateTokens(text), characters: text.length });
+    return sendJson(res, 200, {
+      ok: true,
+      estimate_tokens: text.length,
+      input_tokens: text.length,
+      prompt_chars: text.length,
+      total_chars: text.length,
+      characters: text.length,
+      method: "按 zeabur-antigravity-bridge 口径统计字符数"
+    });
   }
   if (pathname === "/api/admin/quota" && req.method === "GET") {
     return sendJson(res, 200, adminQuotaView(await upstreamQuotaBundle()));
@@ -1476,17 +1484,20 @@ async function handleUserPortalApi(req, res, url, accessId, resource) {
   if (resource === "token-estimate" && req.method === "POST") {
     const body = await readJsonBody(req);
     const text = String(body.text || "");
-    const inputTokens = estimateTokens(text);
+    const inputTokens = text.length;
     const outputTokens = inspection.channel.max_output_tokens ?? null;
     return sendJson(res, 200, {
       ok: true,
       estimate_tokens: inputTokens,
       input_tokens: inputTokens,
+      prompt_chars: inputTokens,
       max_output_tokens: outputTokens,
       estimated_total_tokens: outputTokens === null ? inputTokens : inputTokens + outputTokens,
+      total_chars: inputTokens,
       input_output_ratio: inputOutputRatio(inputTokens, outputTokens),
       token_limit_per_minute: inspection.channel.token_limit_per_minute ?? null,
-      characters: text.length
+      characters: text.length,
+      method: "按 zeabur-antigravity-bridge 口径统计字符数"
     });
   }
   return apiError(res, 405, "Method not allowed.", "method_not_allowed");
@@ -1536,11 +1547,11 @@ async function handleExternalChat(req, res, accessId) {
   const requestedModel = String(body.model || "").trim();
   const model = resolveModelAlias(requestedModel);
   const inputText = messageText(body.messages);
-  const inputTokens = estimateTokens(inputText);
+  const inputTokens = inputText.length;
   if (!requestedModel || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
 
   if (!modelAllowed(provisional.channel, requestedModel)) {
-    store.recordRejected(accessId, { model: requestedModel, estimatedTokens: inputTokens, reason: "model_forbidden" });
+    store.recordRejected(accessId, { model: requestedModel, promptChars: inputTokens, estimatedTokens: inputTokens, reason: "model_forbidden" });
     return apiError(res, 403, policyMessage("model_forbidden"), "model_forbidden");
   }
 
@@ -1569,6 +1580,7 @@ async function handleExternalChat(req, res, accessId) {
     settled = true;
     store.settleReservation(reserved.reservationId, {
       inputTokens,
+      promptChars: inputTokens,
       model: requestedModel,
       latency_ms: Date.now() - startedAt,
       ...details
@@ -1587,7 +1599,8 @@ async function handleExternalChat(req, res, accessId) {
     if (body.stream) {
       const streamed = await pipeSse(res, upstream);
       settle({
-        outputTokens: estimateTokens(streamed.output_text),
+        outputTokens: streamed.output_text.length,
+        outputChars: streamed.output_text.length,
         status: streamed.client_closed ? "client_closed" : streamed.upstream_error ? "upstream_error" : "ok"
       });
       return;
@@ -1600,15 +1613,18 @@ async function handleExternalChat(req, res, accessId) {
       settle({ outputTokens: 0, status: "upstream_error" });
       return apiError(res, 502, "The model service returned an invalid response.", "upstream_error");
     }
-    const outputTokens = estimateTokens(outputTextFromCompletion(payload));
+    const outputTokens = outputTextFromCompletion(payload).length;
     payload.usage = {
       ...(payload.usage || {}),
       prompt_tokens: inputTokens,
       completion_tokens: outputTokens,
       total_tokens: inputTokens + outputTokens,
+      prompt_chars: inputTokens,
+      output_chars: outputTokens,
+      total_chars: inputTokens + outputTokens,
       estimated: true
     };
-    settle({ outputTokens, status: "ok" });
+    settle({ outputTokens, outputChars: outputTokens, status: "ok" });
     return sendJson(res, 200, payload);
   } catch (error) {
     settle({ outputTokens: 0, status: "upstream_error" });
@@ -1642,11 +1658,11 @@ async function handleExternalMessages(req, res, accessId) {
   const requestedModel = String(body.model || "").trim();
   const model = resolveModelAlias(requestedModel);
   const inputText = anthropicRequestText(body);
-  const inputTokens = estimateTokens(inputText);
+  const inputTokens = inputText.length;
   if (!requestedModel || !inputText) return apiError(res, 400, "model and messages are required.", "invalid_request");
 
   if (!modelAllowed(provisional.channel, requestedModel)) {
-    store.recordRejected(accessId, { model: requestedModel, estimatedTokens: inputTokens, reason: "model_forbidden" });
+    store.recordRejected(accessId, { model: requestedModel, promptChars: inputTokens, estimatedTokens: inputTokens, reason: "model_forbidden" });
     return apiError(res, 403, policyMessage("model_forbidden"), "model_forbidden");
   }
 
@@ -1675,6 +1691,7 @@ async function handleExternalMessages(req, res, accessId) {
     settled = true;
     store.settleReservation(reserved.reservationId, {
       inputTokens,
+      promptChars: inputTokens,
       model: requestedModel,
       latency_ms: Date.now() - startedAt,
       ...details
@@ -1693,7 +1710,8 @@ async function handleExternalMessages(req, res, accessId) {
     if (body.stream) {
       const streamed = await pipeAnthropicSse(res, upstream);
       settle({
-        outputTokens: estimateTokens(streamed.output_text),
+        outputTokens: streamed.output_text.length,
+        outputChars: streamed.output_text.length,
         status: streamed.client_closed ? "client_closed" : streamed.upstream_error ? "upstream_error" : "ok"
       });
       return;
@@ -1706,14 +1724,17 @@ async function handleExternalMessages(req, res, accessId) {
       settle({ outputTokens: 0, status: "upstream_error" });
       return apiError(res, 502, "The model service returned an invalid response.", "upstream_error");
     }
-    const outputTokens = estimateTokens(outputTextFromAnthropicMessage(payload));
+    const outputTokens = outputTextFromAnthropicMessage(payload).length;
     payload.usage = {
       ...(payload.usage || {}),
       input_tokens: inputTokens,
       output_tokens: outputTokens,
+      prompt_chars: inputTokens,
+      output_chars: outputTokens,
+      total_chars: inputTokens + outputTokens,
       estimated: true
     };
-    settle({ outputTokens, status: "ok" });
+    settle({ outputTokens, outputChars: outputTokens, status: "ok" });
     return sendJson(res, 200, payload);
   } catch (error) {
     settle({ outputTokens: 0, status: "upstream_error" });

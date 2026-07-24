@@ -61,10 +61,10 @@
 
       <section class="quota-grid" aria-label="额度与限制">
         <article class="quota-card">
-          <span class="quota-label">Token 用量</span>
+          <span class="quota-label">Token(字符) 用量</span>
           <strong id="tokenQuotaValue">--</strong>
           <span class="quota-note" id="tokenQuotaNote">--</span>
-          <progress id="tokenQuotaMeter" max="1" value="0" aria-label="Token 用量"></progress>
+          <progress id="tokenQuotaMeter" max="1" value="0" aria-label="Token(字符) 用量"></progress>
         </article>
         <article class="quota-card">
           <span class="quota-label">请求次数</span>
@@ -112,7 +112,7 @@
           </div>
           <button class="button button-quiet" id="refreshQuota" type="button" disabled>刷新额度</button>
         </div>
-        <div class="quota-result" id="oauthQuotaResult">连接后查看被允许模型的剩余额度和预估 Token。</div>
+        <div class="quota-result" id="oauthQuotaResult">连接后查看被允许模型的剩余额度和 Token(字符) 预估。</div>
       </section>
 
       <div class="tool-grid">
@@ -146,7 +146,7 @@
             <div class="section-heading compact-heading">
               <div>
                 <p class="eyebrow">PRE-FLIGHT</p>
-                <h2 id="estimateTitle">Token 预估</h2>
+                <h2 id="estimateTitle">字符统计</h2>
               </div>
               <span class="character-count" id="estimateCharacters">0 字符</span>
             </div>
@@ -180,12 +180,14 @@
                   <tr>
                     <th>时间</th>
                     <th>模型</th>
-                    <th>Token</th>
+                    <th>输入字符</th>
+                    <th>输出字符</th>
+                    <th>Token<br><small>（字符）</small></th>
                     <th>结果</th>
                   </tr>
                 </thead>
                 <tbody id="logsBody">
-                  <tr><td class="table-empty" colspan="4">连接后查看使用记录</td></tr>
+                  <tr><td class="table-empty" colspan="6">连接后查看使用记录</td></tr>
                 </tbody>
               </table>
             </div>

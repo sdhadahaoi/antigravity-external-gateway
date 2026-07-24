@@ -278,7 +278,7 @@
     elements.expiryText.textContent = channel.expires_at ? "有效至 " + formatDate(channel.expires_at) : "未设置结束时间";
     elements.maxOutputTokens.textContent = isSet(channel.max_output_tokens) ? formatScaledNumber(channel.max_output_tokens) + " Token" : "按服务默认值";
 
-    quota("token", usage.total_tokens, channel.token_limit, remaining.tokens);
+    quota("token", usage.total_chars ?? usage.total_tokens, channel.token_limit, remaining.tokens);
     quota("request", usage.total_requests, channel.request_limit, remaining.requests);
     quota("rate", usage.requests_last_minute, channel.rate_limit_per_minute, remaining.requests_this_minute);
     quota("tokenRate", usage.tokens_last_minute, channel.token_limit_per_minute, remaining.tokens_this_minute);
@@ -467,12 +467,22 @@
   }
 
   function logTokenText(entry) {
-    const total = entry.total_tokens;
+    const total = entry.total_chars ?? entry.total_tokens;
     if (isSet(total)) return formatScaledNumber(total);
     if (isSet(entry.estimated_tokens)) return "约 " + formatScaledNumber(entry.estimated_tokens);
-    const input = number(entry.input_tokens);
-    const output = number(entry.output_tokens);
+    const input = number(entry.prompt_chars ?? entry.input_chars ?? entry.input_tokens);
+    const output = number(entry.output_chars ?? entry.output_tokens);
     return input || output ? formatScaledNumber(input + output) : "-";
+  }
+
+  function logInputText(entry) {
+    const value = entry.prompt_chars ?? entry.input_chars ?? entry.input_tokens;
+    return isSet(value) ? formatScaledNumber(value) : "-";
+  }
+
+  function logOutputText(entry) {
+    const value = entry.output_chars ?? entry.output_tokens;
+    return isSet(value) ? formatScaledNumber(value) : "-";
   }
 
   function tableCell(text, className) {
@@ -488,7 +498,7 @@
     if (!logs.length) {
       const row = document.createElement("tr");
       const cell = tableCell("暂时没有使用记录", "table-empty");
-      cell.colSpan = 4;
+      cell.colSpan = 6;
       row.append(cell);
       elements.logsBody.append(row);
       return;
@@ -499,6 +509,8 @@
       row.append(
         tableCell(formatDate(entry && entry.at)),
         tableCell(entry && entry.model ? String(entry.model) : "-"),
+        tableCell(logInputText(entry || {})),
+        tableCell(logOutputText(entry || {})),
         tableCell(logTokenText(entry || {})),
         tableCell(result.label, result.className),
       );
@@ -516,7 +528,7 @@
       elements.logsBody.replaceChildren();
       const row = document.createElement("tr");
       const cell = tableCell("使用记录暂时不可用", "table-empty");
-      cell.colSpan = 4;
+      cell.colSpan = 6;
       row.append(cell);
       elements.logsBody.append(row);
     } finally {
@@ -653,10 +665,11 @@
         body: JSON.stringify({ text }),
       });
       const output = isSet(payload.max_output_tokens) ? formatScaledNumber(payload.max_output_tokens) + " Token" : "未设置输出上限";
-      elements.estimateResult.textContent = "输入约 " + formatScaledNumber(payload.input_tokens || payload.estimate_tokens) +
-        " Token；最大输出 " + output +
+      const input = payload.prompt_chars || payload.input_tokens || payload.estimate_tokens;
+      elements.estimateResult.textContent = "输入 " + formatScaledNumber(input) +
+        " 字符；最大输出 " + output +
         "；预估总量 " + formatScaledNumber(payload.estimated_total_tokens || payload.estimate_tokens) +
-        " Token；输入/输出比 " + (payload.input_output_ratio || "--");
+        " Token(字符)；输入/输出比 " + (payload.input_output_ratio || "--");
     } catch (error) {
       elements.estimateResult.textContent = error.message || "暂时无法计算";
     } finally {
@@ -674,7 +687,7 @@
     elements.apiKey.value = "";
     elements.testResponse.textContent = "等待测试请求";
     elements.estimateResult.textContent = "等待输入";
-    if (elements.oauthQuotaResult) elements.oauthQuotaResult.textContent = "连接后查看被允许模型的剩余额度和预估 Token。";
+    if (elements.oauthQuotaResult) elements.oauthQuotaResult.textContent = "连接后查看被允许模型的剩余额度和 Token(字符) 预估。";
     clearModelOptions("连接后加载模型");
     renderLogs([]);
     setConnection("等待连接", "");

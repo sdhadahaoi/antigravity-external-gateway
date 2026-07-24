@@ -594,7 +594,12 @@ test("gateway isolates upstream credentials and separates administrator and user
   const completionPayload = await completion.json();
   assert.equal(completionPayload.choices[0].message.content, "mock answer");
   assert.equal(completionPayload.usage.estimated, true);
-  assert.ok(completionPayload.usage.total_tokens > 0);
+  assert.equal(completionPayload.usage.prompt_tokens, "hello".length);
+  assert.equal(completionPayload.usage.completion_tokens, "mock answer".length);
+  assert.equal(completionPayload.usage.total_tokens, "hello".length + "mock answer".length);
+  assert.equal(completionPayload.usage.prompt_chars, "hello".length);
+  assert.equal(completionPayload.usage.output_chars, "mock answer".length);
+  assert.equal(completionPayload.usage.total_chars, "hello".length + "mock answer".length);
 
   const streamChatPath = `/${encodeURIComponent(created.channel.vanity_slug)}/v1/chat/completions`;
   const legacyStreamChatPath = `/u/${encodeURIComponent(created.channel.access_slug)}/v1/chat/completions`;
@@ -661,6 +666,8 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(userOverview.channel.label, "friend");
   assert.equal(userOverview.channel.status, "active");
   assert.ok(userOverview.usage.total_tokens > 0);
+  assert.ok(userOverview.usage.total_chars > 0);
+  assert.equal(userOverview.usage.total_tokens, userOverview.usage.total_chars);
   assert.equal(JSON.stringify(userOverview).includes("target_window_id"), false);
   assert.equal(JSON.stringify(userOverview).includes("target_window_ids"), false);
   assert.equal(JSON.stringify(userOverview).includes("private-account"), false);
@@ -714,6 +721,7 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.ok(userLogs.logs.length > 0);
   assert.equal(userLogs.logs.some(entry => entry.event === "reserved"), false);
   assert.equal(userLogs.logs.some(entry => entry.model === "models"), false);
+  assert.ok(userLogs.logs.some(entry => entry.event === "settled" && Number.isFinite(entry.prompt_chars) && Number.isFinite(entry.output_chars) && entry.total_chars === entry.prompt_chars + entry.output_chars));
   assert.equal(JSON.stringify(userLogs).includes("channel_id"), false);
   assert.equal((await userRequest(userOverviewPath, { headers: { authorization: "Bearer invalid" } })).status, 401);
 

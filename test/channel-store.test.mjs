@@ -321,7 +321,7 @@ test('rotates keys and sanitizes stored logs', (t) => {
 
   const logs = store.getLogs(created.channel.id);
   const rejection = logs.find((entry) => entry.event === 'rejected');
-  assert.deepEqual(Object.keys(rejection).sort(), ['at', 'channel_id', 'estimated_tokens', 'event', 'model', 'reason']);
+  assert.deepEqual(Object.keys(rejection).sort(), ['at', 'channel_id', 'estimated_tokens', 'event', 'model', 'prompt_chars', 'reason']);
   const persisted = readFileSync(path, 'utf8');
   assert.equal(persisted.includes(rotated.apiKey), false);
   assert.equal(persisted.includes('do not store this prompt'), false);
@@ -329,9 +329,9 @@ test('rotates keys and sanitizes stored logs', (t) => {
   assert.equal(store.getLogs({ channelId: '', limit: 10 }).length, logs.length);
 });
 
-test('estimates Chinese, mixed-language, and structured prompts', () => {
+test('counts Chinese, mixed-language, and structured prompt characters', () => {
   assert.equal(estimateTokens(''), 0);
   assert.equal(estimateTokens('你好世界'), 4);
-  assert.ok(estimateTokens('hello world') >= 3);
-  assert.ok(estimateTokens([{ role: 'user', content: '你好, please summarize this.' }]) >= 8);
+  assert.equal(estimateTokens('hello world'), 11);
+  assert.equal(estimateTokens([{ role: 'user', content: '你好, please summarize this.' }]), '你好, please summarize this.'.length);
 });
