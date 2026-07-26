@@ -385,14 +385,62 @@ async function upstreamAccounts() {
 async function upstreamModels() {
   if (!upstreamConfigured()) return [];
   try {
-    const response = await upstreamFetch("/v1/models");
-    if (!response.ok) return [];
-    const payload = await response.json();
-    const models = Array.isArray(payload.data) ? payload.data.map(item => ({ id: String(item.id || ""), label: String(item.label || item.id || "") })).filter(item => item.id) : [];
-    return withModelAliases(models);
+    const [listed, quota] = await Promise.allSettled([
+      upstreamFetch("/v1/models"),
+      upstreamJson("/api/antigravity/quota")
+    ]);
+    const models = [];
+    if (listed.status === "fulfilled" && listed.value.ok) {
+      const payload = await listed.value.json();
+      models.push(...(Array.isArray(payload.data)
+        ? payload.data.map(item => ({ id: String(item.id || ""), label: String(item.label || item.id || "") })).filter(item => item.id)
+        : []));
+    }
+    if (quota.status === "fulfilled") {
+      models.push(...modelsFromQuotaReport(quota.value));
+    }
+    return withModelAliases(dedupeModels(models));
   } catch {
     return [];
   }
+}
+
+function gatewayModelSlug(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function gatewayModelIdForQuotaModel(model = {}) {
+  const raw = String(model.id || model.model || model.name || "").trim();
+  const slug = gatewayModelSlug(raw);
+  if (!slug) return "";
+  return slug.endsWith("-ag") ? slug : `${slug}-ag`;
+}
+
+function modelsFromQuotaReport(report = {}) {
+  const models = [];
+  for (const credential of report.credentials || []) {
+    for (const quotaModel of credential.models || []) {
+      const id = gatewayModelIdForQuotaModel(quotaModel);
+      if (!id) continue;
+      const label = String(quotaModel.label || quotaModel.displayName || quotaModel.display_name || quotaModel.id || quotaModel.model || id);
+      models.push({ id, label: `${label} (Antigravity IDE)`, source: "cloudcode-api" });
+    }
+  }
+  return dedupeModels(models);
+}
+
+function dedupeModels(models = []) {
+  const byId = new Map();
+  for (const model of models) {
+    const id = String(model?.id || "").trim();
+    if (!id || byId.has(id)) continue;
+    byId.set(id, { ...model, id });
+  }
+  return Array.from(byId.values());
 }
 
 function resolveModelAlias(model) {

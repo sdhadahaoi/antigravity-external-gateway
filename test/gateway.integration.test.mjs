@@ -114,7 +114,8 @@ test("gateway isolates upstream credentials and separates administrator and user
             profile: "private-account",
             models: [
               { id: "claude-sonnet-4-6", label: "Claude Sonnet", remainingFraction: 0.72, resetTime: "2026-07-22T16:00:00Z" },
-              { id: "gemini-3-5-flash-medium", label: "Gemini", remainingFraction: 0.31, resetTime: "2026-07-22T16:00:00Z" }
+              { id: "gemini-3-5-flash-medium", label: "Gemini", remainingFraction: 0.31, resetTime: "2026-07-22T16:00:00Z" },
+              { id: "gemini-3.6-flash-tiered", label: "Gemini 3.6 Flash Tiered", remainingFraction: 1, resetTime: "2026-07-22T16:00:00Z" }
             ]
           },
           {
@@ -331,6 +332,7 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(overview.ok, true);
   assert.equal(JSON.stringify(overview).includes(`127.0.0.1:${upstreamPort}`), false);
   assert.equal(JSON.stringify(overview).includes(expectedUpstreamKey), false);
+  assert.equal(overview.models.some(item => item.id === "gemini-3-6-flash-tiered-ag"), true);
 
   const seededModels = await userRequest("/u/seed-friend/v1/models", {
     headers: { authorization: `Bearer ${seededApiKey}` }
