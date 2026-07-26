@@ -340,6 +340,30 @@ test("gateway isolates upstream credentials and separates administrator and user
   assert.equal(seededModels.status, 200);
   assert.deepEqual((await seededModels.json()).data.map(item => item.id), ["gemini-3-5-flash-medium-ag"]);
 
+  const updatedSeededApiKey = `agk_${"U".repeat(40)}`;
+  const importExisting = await adminRequest("/api/admin/friends/import", {
+    method: "POST",
+    headers: adminHeaders,
+    body: JSON.stringify({
+      friends: [{
+        label: "seed friend edited",
+        access_slug: "seed-friend",
+        api_key: updatedSeededApiKey,
+        target_window_ids: ["w1"],
+        allowed_models: ["claude-sonnet-4-6-thinking-ag"],
+        max_output_tokens: 96
+      }]
+    })
+  });
+  assert.equal(importExisting.status, 200);
+  const importExistingJson = await importExisting.json();
+  assert.equal(importExistingJson.seed.updated, 1);
+  const updatedSeededModels = await userRequest("/u/seed-friend/v1/models", {
+    headers: { authorization: `Bearer ${updatedSeededApiKey}` }
+  });
+  assert.equal(updatedSeededModels.status, 200);
+  assert.deepEqual((await updatedSeededModels.json()).data.map(item => item.id), ["claude-sonnet-4-6-thinking-ag"]);
+
   const noAllowedModels = await adminRequest("/api/admin/channels", {
     method: "POST",
     headers: adminHeaders,

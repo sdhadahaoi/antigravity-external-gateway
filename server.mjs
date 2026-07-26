@@ -20,7 +20,7 @@ const UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.GATEWAY_UPSTREAM_T
 const PUBLIC_DIR = path.join(process.cwd(), "public");
 const MODEL_ALIASES = parseModelAliases(process.env.GATEWAY_MODEL_ALIASES || "");
 const store = new ChannelStore(STORE_FILE);
-seedConfiguredFriends();
+let configuredFriendsSeedResult = seedConfiguredFriends();
 const pendingBodyReads = new Map();
 const pendingWindowRequests = new Map();
 
@@ -54,33 +54,81 @@ function adminAuthorized(req) {
 function seedConfiguredFriends() {
   const raw = String(process.env.GATEWAY_FRIENDS_JSON || "").trim();
   if (!raw) {
-    return;
+    return { ok: false, configured: false, message: "GATEWAY_FRIENDS_JSON is not set.", created: 0, updated: 0, skipped: 0, errors: [] };
   }
 
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseFriendConfigText(raw);
   } catch (error) {
     console.warn(`GATEWAY_FRIENDS_JSON ignored: ${error.message}`);
-    return;
+    return { ok: false, configured: true, message: `GATEWAY_FRIENDS_JSON ignored: ${error.message}`, created: 0, updated: 0, skipped: 0, errors: [{ index: -1, message: error.message }] };
   }
 
-  const friends = configuredFriendEntries(parsed);
+  return seedFriendEntriesFromValue(parsed, { source: "GATEWAY_FRIENDS_JSON" });
+}
+
+function parseFriendConfigText(raw) {
+  const text = String(raw || "").trim();
+  if (!text) throw new Error("empty JSON");
+  const parse = value => {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "string" && parsed.trim().startsWith("{")
+      ? JSON.parse(parsed)
+      : parsed;
+  };
+  try {
+    return parse(text);
+  } catch (firstError) {
+    if (/^"?\s*(friends|channels)"?\s*:/i.test(text)) {
+      try {
+        return parse(`{${text}}`);
+      } catch {}
+    }
+    throw firstError;
+  }
+}
+
+function seedFriendEntriesFromValue(value, options = {}) {
+  const source = options.source || "friend backup";
+  const friends = configuredFriendEntries(value);
   if (!friends.length) {
-    console.warn("GATEWAY_FRIENDS_JSON ignored: no friends entries found.");
-    return;
+    const message = `${source} ignored: no friends entries found.`;
+    console.warn(message);
+    return { ok: false, configured: true, message, created: 0, updated: 0, skipped: 0, errors: [] };
   }
 
   const seeded = store.seed(friends);
   if (seeded.created || seeded.updated || seeded.skipped) {
-    console.log(`Seeded friend channels from GATEWAY_FRIENDS_JSON: created=${seeded.created} updated=${seeded.updated} skipped=${seeded.skipped}`);
+    console.log(`Seeded friend channels from ${source}: created=${seeded.created} updated=${seeded.updated} skipped=${seeded.skipped}`);
   }
   for (const error of seeded.errors.slice(0, 10)) {
-    console.warn(`GATEWAY_FRIENDS_JSON friend #${error.index} ignored: ${error.message}`);
+    console.warn(`${source} friend #${error.index} ignored: ${error.message}`);
   }
   if (seeded.errors.length > 10) {
-    console.warn(`GATEWAY_FRIENDS_JSON ignored ${seeded.errors.length - 10} additional invalid friend entries.`);
+    console.warn(`${source} ignored ${seeded.errors.length - 10} additional invalid friend entries.`);
   }
+  return {
+    ok: seeded.created + seeded.updated + seeded.skipped > 0,
+    configured: true,
+    message: `Seeded friend channels from ${source}.`,
+    ...seeded
+  };
+}
+
+function friendSeedAdminView(result = {}) {
+  return {
+    configured: Boolean(result.configured),
+    ok: Boolean(result.ok),
+    created: Number(result.created || 0),
+    updated: Number(result.updated || 0),
+    skipped: Number(result.skipped || 0),
+    message: String(result.message || ""),
+    errors: Array.isArray(result.errors) ? result.errors.slice(0, 20).map(error => ({
+      index: Number(error.index),
+      message: String(error.message || "")
+    })) : []
+  };
 }
 
 function configuredFriendEntries(value) {
@@ -1425,7 +1473,8 @@ async function handleAdmin(req, res, url) {
         user_base_url: userBaseUrl(req),
         // Retained for the current dashboard and older API consumers.
         public_base_url: userBaseUrl(req),
-        upstream_configured: upstreamConfigured()
+        upstream_configured: upstreamConfigured(),
+        friends_seed: friendSeedAdminView(configuredFriendsSeedResult)
       },
       channels: store.list().map(channel => channelView(channel, req)),
       accounts,
@@ -1445,6 +1494,26 @@ async function handleAdmin(req, res, url) {
     enforceWindowFriendLimit(body);
     const created = store.create(body);
     return sendJson(res, 201, { ok: true, channel: channelView(created.channel, req), api_key: created.apiKey });
+  }
+  if (pathname === "/api/admin/friends/reload-env" && req.method === "POST") {
+    configuredFriendsSeedResult = seedConfiguredFriends();
+    return sendJson(res, 200, {
+      ok: true,
+      seed: friendSeedAdminView(configuredFriendsSeedResult),
+      channels: store.list().map(channel => channelView(channel, req))
+    });
+  }
+  if (pathname === "/api/admin/friends/import" && req.method === "POST") {
+    const body = await readJsonBody(req);
+    const source = body?.source === "environment" ? "admin environment JSON" : "admin backup import";
+    let parsed = body?.payload ?? body?.json ?? body;
+    if (typeof parsed === "string") parsed = parseFriendConfigText(parsed);
+    const seeded = seedFriendEntriesFromValue(parsed, { source });
+    return sendJson(res, seeded.ok ? 200 : 400, {
+      ok: seeded.ok,
+      seed: friendSeedAdminView(seeded),
+      channels: store.list().map(channel => channelView(channel, req))
+    });
   }
   if (pathname === "/api/admin/token-estimate" && req.method === "POST") {
     const body = await readJsonBody(req);

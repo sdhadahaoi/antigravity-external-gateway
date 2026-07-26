@@ -39,6 +39,7 @@
     createMessage: $("#createMessage"),
     channelsList: $("#channelsList"),
     friendBackupFile: $("#friendBackupFile"),
+    reloadEnvFriends: $("#reloadEnvFriends"),
     logChannel: $("#logChannel"),
     logLimit: $("#logLimit"),
     logsBody: $("#logsBody"),
@@ -560,7 +561,7 @@
 
     elements.channelsList.innerHTML = state.channels.length
       ? state.channels.map(renderChannelCard).join("")
-      : "<div class=\"empty-state\">尚未创建朋友配置。选择指定凭证窗口后，即可为每个朋友生成独立用户地址和 API Key。</div>";
+      : emptyChannelsHtml(data.config && data.config.friends_seed);
 
     const currentLogSelection = elements.logChannel.value;
     const options = state.channels.map((channel) => {
@@ -575,6 +576,18 @@
     }
 
     configureForms();
+  }
+
+  function emptyChannelsHtml(seed) {
+    if (seed && seed.configured) {
+      const errors = Array.isArray(seed.errors) ? seed.errors : [];
+      const detail = errors.length
+        ? "<br>环境变量导入错误：" + errors.slice(0, 3).map((error) => "#" + html(error.index) + " " + html(error.message)).join("；")
+        : "";
+      const summary = "GATEWAY_FRIENDS_JSON 已配置；启动同步结果：created=" + html(seed.created || 0) + " updated=" + html(seed.updated || 0) + " skipped=" + html(seed.skipped || 0) + "。" + detail;
+      return "<div class=\"empty-state\">" + summary + "<br>如果刚修改过 Render 环境变量，请点“同步环境变量”；如果这里提示缺字段，请重新复制完整朋友配置。</div>";
+    }
+    return "<div class=\"empty-state\">尚未创建朋友配置。选择指定凭证窗口后，即可为每个朋友生成独立用户地址和 API Key。</div>";
   }
 
   function backupChannel(channel) {
@@ -730,33 +743,39 @@
     const parsed = JSON.parse(text);
     const friends = normalizeImportedFriends(parsed);
     if (!friends.length) throw new Error("备份里没有朋友配置。");
-    if (!window.confirm("将导入 " + friends.length + " 个朋友配置。已有相同短地址的朋友会跳过。继续吗？")) return;
+    if (!window.confirm("将导入 " + friends.length + " 个朋友配置。已有相同短地址的朋友会更新为备份里的窗口、模型、期限和 Key。继续吗？")) return;
 
-    const existingSlugs = new Set((state.channels || []).map(accessSlugFor).filter(Boolean));
-    let created = 0;
-    let skipped = 0;
-    const failures = [];
-    for (const friend of friends) {
-      try {
-        const payload = importPayloadForFriend(friend);
-        if (existingSlugs.has(payload.access_slug)) {
-          skipped += 1;
-          continue;
-        }
-        const result = await api("/api/admin/channels", { method: "POST", body: JSON.stringify(payload) });
-        rememberApiKey(result.channel || payload, result.api_key || payload.api_key);
-        existingSlugs.add(payload.access_slug);
-        created += 1;
-      } catch (error) {
-        failures.push(asErrorMessage(error, "导入失败"));
-      }
+    const payloads = friends.map(importPayloadForFriend);
+    const result = await api("/api/admin/friends/import", {
+      method: "POST",
+      body: JSON.stringify({ friends: payloads })
+    });
+    for (const payload of payloads) {
+      rememberApiKey(payload, payload.api_key);
     }
 
     await loadOverview();
-    const message = "导入完成：恢复 " + created + " 个，跳过 " + skipped + " 个" + (failures.length ? "，失败 " + failures.length + " 个。" : "。");
-    showToast(message, failures.length ? "error" : "");
-    if (failures.length) {
-      setMessage(elements.adminMessage, message + " " + failures.slice(0, 3).join("；"), "error");
+    const seed = result.seed || {};
+    const errors = Array.isArray(seed.errors) ? seed.errors : [];
+    const message = "导入完成：新增 " + (seed.created || 0) + " 个，更新 " + (seed.updated || 0) + " 个，未变化 " + (seed.skipped || 0) + " 个" + (errors.length ? "，失败 " + errors.length + " 个。" : "。");
+    showToast(message, errors.length ? "error" : "");
+    if (errors.length) setMessage(elements.adminMessage, message + " " + errors.slice(0, 3).map((error) => error.message).join("；"), "error");
+  }
+
+  async function reloadEnvFriends() {
+    if (!window.confirm("将从当前服务进程读取 GATEWAY_FRIENDS_JSON，并同步到朋友列表。继续吗？")) return;
+    try {
+      const result = await api("/api/admin/friends/reload-env", { method: "POST" });
+      await loadOverview();
+      const seed = result.seed || {};
+      const errors = Array.isArray(seed.errors) ? seed.errors : [];
+      const message = "环境变量同步完成：新增 " + (seed.created || 0) + " 个，更新 " + (seed.updated || 0) + " 个，未变化 " + (seed.skipped || 0) + " 个" + (errors.length ? "，错误 " + errors.length + " 个。" : "。");
+      showToast(message, errors.length ? "error" : "");
+      setMessage(elements.adminMessage, errors.length ? message + " " + errors.slice(0, 3).map((error) => error.message).join("；") : message, errors.length ? "error" : "success");
+    } catch (error) {
+      const message = asErrorMessage(error, "同步环境变量失败。");
+      setMessage(elements.adminMessage, message, "error");
+      showToast(message, "error");
     }
   }
 
@@ -1458,6 +1477,7 @@
     $("#copyAllFriendBackups").addEventListener("click", copyAllFriendBackups);
     $("#downloadAllFriendBackups").addEventListener("click", downloadAllFriendBackups);
     $("#importFriendBackups").addEventListener("click", () => elements.friendBackupFile.click());
+    if (elements.reloadEnvFriends) elements.reloadEnvFriends.addEventListener("click", reloadEnvFriends);
     elements.friendBackupFile.addEventListener("change", importFriendBackupFile);
     $("#copyPublicEndpoint").addEventListener("click", () => copyText(state.userBaseUrl, "已复制外接 API 地址。"));
     $("#randomizeCreateForm").addEventListener("click", () => {
