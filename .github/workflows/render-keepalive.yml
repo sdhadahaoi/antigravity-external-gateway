@@ -21,14 +21,19 @@ jobs:
     timeout-minutes: 3
     env:
       RENDER_HEALTHCHECK_URL: https://antigravity-external-gateway.onrender.com/health
+      BRIDGE_HEALTHCHECK_URL: https://zeabur-antigravity-bridge.onrender.com/health
     steps:
-      - name: Request Render health endpoint
+      - name: Request Render health endpoints
         shell: bash
         run: |
           test -n "$RENDER_HEALTHCHECK_URL" || {
             echo "Render health-check URL is missing." >&2
             exit 1
           }
-          curl --fail --silent --show-error --location \
-            --retry 2 --retry-delay 10 --max-time 120 --output /dev/null \
-            "$RENDER_HEALTHCHECK_URL"
+          for url in "$RENDER_HEALTHCHECK_URL" "$BRIDGE_HEALTHCHECK_URL"; do
+            test -n "$url" || continue
+            echo "Pinging $url"
+            curl --fail --silent --show-error --location \
+              --retry 2 --retry-delay 10 --max-time 120 --output /dev/null \
+              "$url"
+          done
