@@ -383,18 +383,23 @@
     return values.filter((value, index) => values.indexOf(value) === index);
   }
 
-  function selectedAccounts(container) {
-    const values = $$("input[name='target_window_ids']:checked", container)
-      .map((input) => String(input.value || "").trim())
+  function cleanUniqueValues(values) {
+    const cleaned = (values || [])
+      .map((value) => String(value || "").trim())
       .filter(Boolean);
-    return values.filter((value, index) => values.indexOf(value) === index);
+    return cleaned.filter((value, index) => cleaned.indexOf(value) === index);
+  }
+
+  function formValues(values, name) {
+    return cleanUniqueValues(values.getAll(name));
+  }
+
+  function selectedAccounts(container) {
+    return cleanUniqueValues($$("input[name='target_window_ids']:checked", container).map((input) => input.value));
   }
 
   function renderAccountPicker(container, selectedValues, disabledText) {
-    const selectedIds = (selectedValues || [])
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .filter((value, index, values) => values.indexOf(value) === index);
+    const selectedIds = cleanUniqueValues(selectedValues);
     const selected = new Set(selectedIds);
     const accounts = state.accounts || [];
     const seen = new Set();
@@ -420,7 +425,7 @@
   }
 
   function selectedModels(container) {
-    return $$("input[name='allowed_models']:checked", container).map((input) => input.value);
+    return cleanUniqueValues($$("input[name='allowed_models']:checked", container).map((input) => input.value));
   }
 
   function renderModelPicker(container, selected) {
@@ -1030,9 +1035,9 @@
 
   function collectPayload(form, modelContainer) {
     const values = new FormData(form);
-    const allowedModels = selectedModels(modelContainer);
+    const allowedModels = cleanUniqueValues([...formValues(values, "allowed_models"), ...selectedModels(modelContainer)]);
     const accountContainer = form.id === "editChannelForm" ? elements.editAccount : elements.createAccount;
-    const targetWindows = selectedAccounts(accountContainer);
+    const targetWindows = cleanUniqueValues([...formValues(values, "target_window_ids"), ...selectedAccounts(accountContainer)]);
     const label = String(values.get("label") || "").trim();
     if (!label) throw new Error("请填写通道名称。");
     if (!targetWindows.length) throw new Error("请至少选择一个指定凭证窗口。");
