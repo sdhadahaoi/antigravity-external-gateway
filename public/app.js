@@ -384,20 +384,35 @@
   }
 
   function selectedAccounts(container) {
-    return $$("input[name='target_window_ids']:checked", container).map((input) => input.value);
+    const values = $$("input[name='target_window_ids']:checked", container)
+      .map((input) => String(input.value || "").trim())
+      .filter(Boolean);
+    return values.filter((value, index) => values.indexOf(value) === index);
   }
 
   function renderAccountPicker(container, selectedValues, disabledText) {
-    const selected = new Set((selectedValues || []).map(String));
+    const selectedIds = (selectedValues || [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .filter((value, index, values) => values.indexOf(value) === index);
+    const selected = new Set(selectedIds);
     const accounts = state.accounts || [];
+    const seen = new Set();
     const options = accounts.map((account) => {
       const id = accountId(account);
+      if (!id) return "";
+      seen.add(String(id));
       const ready = account.ready !== undefined
         ? Boolean(account.ready)
         : Boolean(account.has_oauth_credentials || account.has_login_credentials);
       const status = ready ? "（已绑定）" : "（未绑定凭证）";
       return "<label class=\"model-choice\"><input type=\"checkbox\" name=\"target_window_ids\" value=\"" + html(id) + "\"" +
         (selected.has(String(id)) ? " checked" : "") + "><span>" + html(accountName(account) + " [" + id + "]" + status) + "</span></label>";
+    }).filter(Boolean);
+    selectedIds.forEach((id) => {
+      if (seen.has(id)) return;
+      options.push("<label class=\"model-choice\"><input type=\"checkbox\" name=\"target_window_ids\" value=\"" + html(id) + "\" checked>" +
+        "<span>" + html(id + "（当前已选；上游列表暂未返回这个窗口）") + "</span></label>");
     });
     container.innerHTML = options.length
       ? options.join("")
